@@ -37,24 +37,25 @@ SessionDep = Annotated[Session, Depends(get_session)]
 def create_db_and_tables():
     SQLModel.metadata.create_all(engine)
 
-def populate_db_from_json(session: SessionDep):
-    for nodefile in glob('reference-repository/data/chameleoncloud/sites/*/clusters/chameleon/nodes/*.json'):
-        filepath = Path(nodefile)
-        parts=filepath.parts
-        site = parts[4]
-        with open(nodefile, "r") as f:
-            data = json.load(f)
-        node = Node(
-                   uuid=data.get("uid"),
-                   node_name=data.get("node_name"),
-                   node_type=data.get("node_type"),
-                   site=site,
-                   )
-        try:
-            session.add(node)
-            session.commit()
-        except Exception as ex:
-            continue
+def populate_db_from_json():
+    with Session(engine) as session:
+        for nodefile in glob('reference-repository/data/chameleoncloud/sites/*/clusters/chameleon/nodes/*.json'):
+            filepath = Path(nodefile)
+            parts=filepath.parts
+            site = parts[4]
+            with open(nodefile, "r") as f:
+                data = json.load(f)
+            node = Node(
+                    uuid=data.get("uid"),
+                    node_name=data.get("node_name"),
+                    node_type=data.get("node_type"),
+                    site=site,
+                    )
+            try:
+                session.add(node)
+                session.commit()
+            except Exception as ex:
+                continue
 
   
 app = FastAPI()
@@ -62,7 +63,7 @@ app = FastAPI()
 @app.on_event("startup")
 def on_startup():
     create_db_and_tables()
-    populate_db_from_json(session = get_session())
+    populate_db_from_json()
 
 @app.get("/nodes")
 def list_nodes(
