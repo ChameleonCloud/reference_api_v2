@@ -1,0 +1,10 @@
+[project]
+name = "hw-browser"
+version = "0.1.0"
+description = "browser for referenceapi data"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+	"fastapi[standard]",
+	"sqlmodel"
+]
