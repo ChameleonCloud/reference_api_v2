@@ -51,5 +51,5 @@ jobs:
           file: Dockerfile
           push: true
           tags:  |
-            ghcr.io/${{ github.repository_owner,, }}/${{ github.repository,, }}:latest
-            ghcr.io/${{ github.repository_owner,, }}/${{ github.repository,, }}:${{ github.sha }}
+            ghcr.io/chameleoncloud/reference_api_v2:latest
+            ghcr.io/chameleoncloud/reference_api_v2:${{ github.sha }}
