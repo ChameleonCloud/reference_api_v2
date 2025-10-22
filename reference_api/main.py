@@ -13,6 +13,7 @@ from reference_api.api import collections, items
 from reference_api.services import clusters, nodes, site_root, sites
 
 
+# pylint: disable=too-few-public-methods
 class JsonExtensionMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         if request.url.path.endswith(".json"):
