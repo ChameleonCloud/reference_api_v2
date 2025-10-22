@@ -6,15 +6,27 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, HTTPException, Path as FastApiPath, Query
 from fastapi.responses import JSONResponse
 from git import InvalidGitRepositoryError, Repo
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
 
 from reference_api.api import collections, items
 from reference_api.services import clusters, nodes, site_root, sites
+
+
+# pylint: disable=too-few-public-methods
+class JsonExtensionMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        if request.url.path.endswith(".json"):
+            request.scope["path"] = request.scope["path"][:-5]
+        response = await call_next(request)
+        return response
 
 
 app = FastAPI(
     title="Reference API",
     description="Serves reference-repository JSON files as a REST API."
 )
+app.add_middleware(JsonExtensionMiddleware)
 
 
 @lru_cache(maxsize=1)
