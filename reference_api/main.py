@@ -86,7 +86,7 @@ def root(ref_dir: Path = Depends(get_ref_dir), repo_root: Path = Depends(get_rep
 )
 def list_sites(
     offset: int = Query(0, ge=0, description="Offset for pagination"),
-    limit: int = Query(100, gt=0, le=1000, description="Limit for pagination"),
+    limit: int = Query(500, gt=0, le=500, description="Limit for pagination"),
     ref_dir: Path = Depends(get_ref_dir),
     repo_root: Path = Depends(get_repo_root)
 ):
@@ -100,8 +100,8 @@ def list_sites(
     tags=["Sites", "Versioning"],
 )
 def list_all_site_versions(
-    offset: int = 0,
-    limit: int = 100,
+    offset: int = Query(0, ge=0, description="Offset for pagination"),
+    limit: int = Query(500, gt=0, le=500, description="Limit for pagination"),
     ref_dir: Path = Depends(get_ref_dir),
     repo_root: Path = Depends(get_repo_root),
 ):
@@ -141,8 +141,8 @@ def list_site_versions(
     site_id: str = FastApiPath(
         ..., description="The unique identifier for the site.", examples=["uc"]
     ),
-    offset: int = 0,
-    limit: int = 100,
+    offset: int = Query(0, ge=0, description="Offset for pagination"),
+    limit: int = Query(500, gt=0, le=500, description="Limit for pagination"),
     ref_dir: Path = Depends(get_ref_dir),
     repo_root: Path = Depends(get_repo_root)
 ):
@@ -187,8 +187,8 @@ def list_clusters(
     site_id: str = FastApiPath(
         ..., description="The unique identifier for the site.", examples=["uc"]
     ),
-    offset: int = 0,
-    limit: int = 100,
+    offset: int = Query(0, ge=0, description="Offset for pagination"),
+    limit: int = Query(500, gt=0, le=500, description="Limit for pagination"),
     ref_dir: Path = Depends(get_ref_dir),
     repo_root: Path = Depends(get_repo_root)
 ):
@@ -210,8 +210,8 @@ def list_all_cluster_versions_for_site(
     site_id: str = FastApiPath(
         ..., description="The unique identifier for the site.", examples=["uc"]
     ),
-    offset: int = 0,
-    limit: int = 100,
+    offset: int = Query(0, ge=0, description="Offset for pagination"),
+    limit: int = Query(500, gt=0, le=500, description="Limit for pagination"),
     ref_dir: Path = Depends(get_ref_dir),
     repo_root: Path = Depends(get_repo_root),
 ):
@@ -259,8 +259,8 @@ def list_cluster_versions(
     cluster_id: str = FastApiPath(
         ..., description="The unique identifier for the cluster.", examples=["chameleon"]
     ),
-    offset: int = 0,
-    limit: int = 100,
+    offset: int = Query(0, ge=0, description="Offset for pagination"),
+    limit: int = Query(500, gt=0, le=500, description="Limit for pagination"),
     ref_dir: Path = Depends(get_ref_dir),
     repo_root: Path = Depends(get_repo_root)
 ):
@@ -310,8 +310,8 @@ def list_nodes(
     cluster_id: str = FastApiPath(
         ..., description="The unique identifier for the cluster.", examples=["chameleon"]
     ),
-    offset: int = 0,
-    limit: int = 100,
+    offset: int = Query(0, ge=0, description="Offset for pagination"),
+    limit: int = Query(500, gt=0, le=500, description="Limit for pagination"),
     ref_dir: Path = Depends(get_ref_dir),
     repo_root: Path = Depends(get_repo_root)
 ):
@@ -367,8 +367,8 @@ def list_node_versions(
     node_id: str = FastApiPath(
         ..., description="The unique identifier for the node."
     ),
-    offset: int = 0,
-    limit: int = 100,
+    offset: int = Query(0, ge=0, description="Offset for pagination"),
+    limit: int = Query(500, gt=0, le=500, description="Limit for pagination"),
     ref_dir: Path = Depends(get_ref_dir),
     repo_root: Path = Depends(get_repo_root)
 ):
