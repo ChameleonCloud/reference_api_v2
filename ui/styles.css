@@ -45,9 +45,7 @@ body {
     align-items: flex-start;
 }
 
-#search-panel, #stats-bar {
-    display: none;
-}
+
 
 #sidebar {
     width: 250px;
@@ -114,33 +112,10 @@ header h1 {
     font-weight: 700;
 }
 
-#breadcrumbs {
-    display: none;
-    margin-bottom: 1.5rem;
-    font-size: 0.95rem;
-    color: #6c757d;
-}
 
-#breadcrumbs a {
-    color: var(--primary-color);
-    text-decoration: none;
-}
-
-#breadcrumbs a:hover {
-    text-decoration: underline;
-}
-
-#breadcrumbs span {
-    margin: 0 0.5rem;
-    color: #adb5bd;
-}
 
 /* Grids & Cards */
-.grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-    gap: 1.5rem;
-}
+
 
 .card {
     background: var(--card-bg);
@@ -171,43 +146,7 @@ header h1 {
     color: var(--text-color);
 }
 
-/* Stats Bar */
-.site-stats-container {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 1rem;
-    margin-bottom: 1.5rem;
-}
 
-.site-stat {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    background: white;
-    padding: 0.5rem 0.75rem;
-    border-radius: 4px;
-    border: 1px solid var(--border-color);
-    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-    font-size: 0.85rem;
-    transition: all 0.2s ease;
-}
-
-.site-stat.btn-like {
-    cursor: pointer;
-    user-select: none;
-}
-
-.site-stat.btn-like:hover {
-    border-color: var(--brand-info);
-    transform: translateY(-1px);
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-}
-
-.site-stat.btn-like.active {
-    border-color: var(--brand-info);
-    background-color: #f0f7fd; /* Very light blue */
-    box-shadow: 0 0 0 2px rgba(0,123,255,0.1);
-}
 
 .checkbox-group label {
     display: flex;
@@ -229,57 +168,7 @@ header h1 {
     min-width: 30px;
 }
 
-/* Sidebar Site Stats */
-.site-stats-sidebar {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    margin-bottom: 1rem;
-}
 
-.site-stat-sidebar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    background: white;
-    border: 1px solid var(--border-color);
-    padding: 0.5rem 0.75rem;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.site-stat-sidebar:hover {
-    background-color: #f8f9fa;
-    border-color: #ced4da;
-}
-
-.site-stat-sidebar.active {
-    border-color: var(--primary-color);
-    background-color: #f0fdf4;
-    box-shadow: 0 0 0 1px var(--primary-color) inset;
-}
-
-.site-stat-sidebar .site-name {
-    font-weight: 600;
-    color: var(--text-color);
-    font-size: 0.85rem;
-}
-
-.site-stat-sidebar .site-count {
-    font-size: 0.8rem;
-    color: var(--grey);
-    font-family: var(--font-mono);
-    background: #eee;
-    padding: 2px 6px;
-    border-radius: 10px;
-}  
-
-.site-stat-sidebar.active .site-count {
-    background: white;
-    color: var(--primary-color);
-    font-weight: 700;
-}
 
 /* Facets */
 .facet-group {
@@ -375,38 +264,7 @@ header h1 {
     padding-bottom: 1rem;
 }
 
-.stat-bars {
-    display: flex;
-    width: 80px;
-    height: 8px;
-    background: #e9ecef;
-    border-radius: 2px;
-    overflow: hidden;
-}
 
-.bar-match {
-    background: var(--brand-success);
-}
-
-.bar-excl {
-    background: var(--grey-med);
-    opacity: 0.3;
-}
-
-.stat-text {
-    font-family: monospace;
-    font-size: 0.8rem;
-    color: var(--grey-dark);
-}
-
-.val-match {
-    color: var(--brand-success);
-    font-weight: 700;
-}
-
-.val-total {
-    color: var(--grey-dark);
-}
 
 /* Dense Results Table */
 .table-dense {
@@ -436,108 +294,11 @@ header h1 {
 .table-dense tr:last-child td {
     border-bottom: none;
 }
- th {
-    text-align: left;
-    padding: 0.75rem 1rem;
-    font-weight: 600;
-    color: var(--brand-info);
-}
 
-/* Dense Results Table */
-.results-table {
-    width: 100%;
-    border-collapse: collapse;
-    background: white;
-    font-size: 0.9rem;
-    border-radius: 4px;
-    overflow: hidden;
-    box-shadow: var(--shadow);
-}
 
-.results-table thead {
-    background: var(--bg-color);
-    border-bottom: 2px solid var(--border-color);
-}
 
-.results-table th {
-    text-align: left;
-    padding: 0.75rem 1rem;
-    font-weight: 600;
-    color: var(--brand-info);
-}
 
-.results-table td {
-    padding: 0.75rem 1rem;
-    border-bottom: 1px solid var(--border-color);
-}
 
-.results-table tr:hover {
-    background-color: rgba(35, 159, 240, 0.05);
-    cursor: pointer;
-}
-
-.results-table .col-name {
-    line-height: 1.2;
-}
-
-.results-table .name {
-    font-weight: 600;
-    color: var(--brand-info);
-}
-
-.results-table .sub {
-    font-size: 0.75rem;
-    color: var(--grey);
-}
-
-/* Node Details */
-
-/* Node Details */
-.detail-view {
-    background: var(--card-bg);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 2rem;
-    box-shadow: var(--shadow);
-}
-
-.section {
-    margin-bottom: 2rem;
-}
-
-.section h3 {
-    border-bottom: 3px solid var(--brand-info);
-    padding-bottom: 0.5rem;
-    margin-bottom: 1rem;
-    font-size: 1.25rem;
-    color: var(--brand-info);
-}
-
-.property-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-    gap: 1rem;
-}
-
-.property {
-    background: var(--bg-color);
-    padding: 0.75rem;
-    border-radius: 4px;
-}
-
-.property .label {
-    display: block;
-    font-size: 0.75rem;
-    text-transform: uppercase;
-    color: #6c757d;
-    margin-bottom: 0.25rem;
-    letter-spacing: 0.5px;
-}
-
-.property .value {
-    font-size: 0.95rem;
-    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
-}
 
 /* JSON Viewer */
 pre {

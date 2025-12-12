@@ -2,42 +2,15 @@ const API_BASE = '..'; // Relative path from /ui/ to /
 
 // State
 const state = {
-    path: [], 
-    facets: { node_types: [], gpu_models: [] },
     allNodes: [], // Cache of ALL nodes for client-side filtering
     siteCounts: {}, // Total nodes per site
 };
 
 // DOM Elements
 const content = document.getElementById('content');
-const breadcrumbs = document.getElementById('breadcrumbs');
 const loading = document.getElementById('loading');
 const error = document.getElementById('error');
-const searchPanel = document.getElementById('search-panel');
 const sidebar = document.getElementById('advanced-filters');
-const statsBar = document.getElementById('stats-bar');
-
-// State for active site filter removed in favor of DOM state (like others)
-
-
-function navigateToNode(siteId, clusterId, nodeId) {
-    fetchNodeDetails(siteId, clusterId, nodeId);
-}
-
-// Re-implement Detail Fetch
-async function fetchNodeDetails(siteId, clusterId, nodeId) {
-    // Only one not refactored yet
-    setLoading(true);
-    try {
-        const res = await fetch(`${API_BASE}/sites/${siteId}/clusters/${clusterId}/nodes/${nodeId}`);
-        const data = await res.json();
-        renderNodeDetail(data);
-    } catch (e) {
-        showError(e);
-    } finally {
-        setLoading(false);
-    }
-}
 
 // Search & filters
 
@@ -45,15 +18,40 @@ async function fetchNodeDetails(siteId, clusterId, nodeId) {
 
 async function initData() {
     try {
-        // 1. Facets
-        const fRes = await fetch(`${API_BASE}/nodes/facets`);
-        state.facets = await fRes.json();
+        // Get all sites
+        const sitesRes = await fetch(`${API_BASE}/sites`);
+        const sitesData = await sitesRes.json();
+        const sites = sitesData.items || [];
         
-        // 2. All Nodes (for client side search & stats)
-        const nRes = await fetch(`${API_BASE}/nodes`);
-        state.allNodes = await nRes.json();
+        // Aggregate all nodes from all sites/clusters
+        state.allNodes = [];
         
-        // Calculate baselines
+        for (const site of sites) {
+            const siteId = site.uid;
+            
+            // Get clusters for this site
+            const clustersRes = await fetch(`${API_BASE}/sites/${siteId}/clusters`);
+            const clustersData = await clustersRes.json();
+            const clusters = clustersData.items || [];
+            
+            for (const cluster of clusters) {
+                const clusterId = cluster.uid;
+                
+                // Get nodes for this cluster
+                const nodesRes = await fetch(`${API_BASE}/sites/${siteId}/clusters/${clusterId}/nodes`);
+                const nodesData = await nodesRes.json();
+                const nodes = nodesData.items || [];
+                
+                // Inject site_id and cluster_id for context
+                nodes.forEach(node => {
+                    node.site_id = siteId;
+                    node.cluster_id = clusterId;
+                    state.allNodes.push(node);
+                });
+            }
+        }
+        
+        // Calculate site counts
         state.siteCounts = {};
         state.allNodes.forEach(n => {
             const s = n.site_id || 'Unknown';
@@ -191,39 +189,7 @@ function showError(msg) {
     content.innerHTML = '';
 }
 
-function renderGrid(items, type) {
-    content.innerHTML = '';
-    const grid = document.createElement('div');
-    grid.className = 'grid';
 
-    items.forEach(item => {
-        const card = document.createElement('div');
-        card.className = 'card';
-        
-        let title = item.name || item.uid || item.id;
-        let subtitle = '';
-
-        if (type === 'site') {
-            title = item.name || item.uid;
-            subtitle = item.location || item.description || '';
-        } else if (type === 'cluster') {
-             // Cluster doesn't strictly have a name field in the list usually, just 'uid' in the collection
-             title = item.uid;
-             subtitle = item.type || '';
-        } else if (type === 'node') {
-            title = item.node_name || item.uid;
-            subtitle = item.node_type || '';
-        }
-
-        card.innerHTML = `
-            <h2>${title}</h2>
-            <p>${subtitle}</p>
-        `;
-        
-    });
-
-    content.appendChild(grid);
-}
 
 // Helper to toggle a whole family of checkboxes
 window.toggleFamily = function(familyName, isChecked) {
@@ -523,9 +489,9 @@ function renderSearchResults(matches) {
                 
                 // Details Grid
                 const detailsHtml = group.nodes.map(node => `
-                    <a href="#" onclick="navigateToNode('${node.uid}'); return false;" class="node-link-item" title="${node.uid}">
+                    <span class="node-link-item" title="${node.uid}">
                         ${node.node_name || node.uid.substring(0,8)}
-                    </a>
+                    </span>
                 `).join('');
 
                 return `
@@ -616,65 +582,7 @@ function renderSidebarInputs() {
 
 
 
-function renderNodeDetail(node) {
-    content.innerHTML = '';
-    const container = document.createElement('div');
-    container.className = 'detail-view';
 
-    // Helper to render sections safely
-    const renderSection = (title, data) => {
-        if (!data || Object.keys(data).length === 0) return '';
-        
-        let propsHtml = '<div class="property-grid">';
-        for (const [key, val] of Object.entries(data)) {
-            if (typeof val === 'object' && val !== null && !Array.isArray(val)) continue; // skip nested for now
-            
-            // Format arrays slightly nicer
-            const displayVal = Array.isArray(val) ? val.length + ' items' : val;
-
-            propsHtml += `
-                <div class="property">
-                    <span class="label">${key.replace(/_/g, ' ')}</span>
-                    <span class="value">${displayVal}</span>
-                </div>
-            `;
-        }
-        propsHtml += '</div>';
-
-        return `
-            <div class="section">
-                <h3>${title}</h3>
-                ${propsHtml}
-            </div>
-        `;
-    };
-
-    let html = `<h1>${node.node_name || node.uid}</h1>`;
-    
-    // Top level info
-    html += renderSection('Overview', {
-        'Type': node.node_type,
-        'UID': node.uid,
-        'Architecture': node.architecture?.platform_type
-    });
-
-    // Hardware subsections
-    if (node.chassis) html += renderSection('Chassis', node.chassis);
-    if (node.processor) html += renderSection('Processor', node.processor);
-    if (node.main_memory) html += renderSection('Memory', node.main_memory);
-    if (node.gpu && node.gpu.gpu) html += renderSection('GPU', node.gpu);
-
-    // Raw JSON fallback/debug
-    html += `
-        <div class="section">
-            <h3>Raw Data</h3>
-            <pre>${JSON.stringify(node, null, 2)}</pre>
-        </div>
-    `;
-
-    container.innerHTML = html;
-    content.appendChild(container);
-}
 
 // Init
 window.addEventListener('DOMContentLoaded', async () => {

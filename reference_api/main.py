@@ -3,7 +3,6 @@ import tomllib
 from functools import lru_cache
 from pathlib import Path
 
-from typing import List, Optional, Dict
 from fastapi import Depends, FastAPI, HTTPException, Path as FastApiPath, Query
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -301,53 +300,6 @@ def get_cluster_version(
     if not v:
         raise HTTPException(status_code=404, detail="Version not found")
     return v
-
-
-
-@app.get(
-    "/nodes/facets",
-    response_model=Dict[str, List[str]],
-    summary="Get available filter options for nodes",
-    tags=["Nodes", "Search"],
-)
-def get_node_facets(
-    ref_dir: Path = Depends(get_ref_dir),
-    repo_root: Path = Depends(get_repo_root)
-):
-    """
-    Returns unique values for node properties like 'node_types' and 'gpu_models'
-    to populate search filters.
-    """
-    return nodes.get_node_facets(ref_dir, repo_root)
-
-
-@app.get(
-    "/nodes",
-    response_model=List[items.NodeItem],
-    summary="Search nodes across all sites",
-    tags=["Nodes", "Search"],
-)
-def search_nodes(
-    min_gpu: Optional[int] = Query(None, description="Minimum number of GPUs", ge=0),
-    min_ram_gb: Optional[int] = Query(None, description="Minimum RAM in GiB", ge=0),
-    architecture: Optional[str] = Query(None, description="CPU Architecture (e.g. x86_64)"),
-    node_type: Optional[str] = Query(None, description="Detailed Node Type"),
-    gpu_model: Optional[str] = Query(None, description="GPU Model Name (partial match)"),
-    ref_dir: Path = Depends(get_ref_dir),
-    repo_root: Path = Depends(get_repo_root)
-):
-    """
-    Search for nodes matching specific criteria across all known sites and clusters.
-    """
-    return nodes.get_all_nodes(
-        ref_dir,
-        repo_root,
-        min_gpu_count=min_gpu,
-        min_ram_gb=min_ram_gb,
-        architecture=architecture,
-        node_type=node_type,
-        gpu_model=gpu_model
-    )
 
 
 @app.get(
