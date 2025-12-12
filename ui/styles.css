@@ -22,6 +22,7 @@ body {
     padding: 0 1.5rem;
 }
 
+/* Header & Nav */
 header {
     background-color: var(--card-bg);
     border-bottom: 1px solid var(--border-color);
@@ -30,10 +31,30 @@ header {
     box-shadow: var(--shadow);
 }
 
+.header-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
 header h1 {
     margin: 0;
     font-size: 1.5rem;
     font-weight: 700;
+}
+
+.main-nav a {
+    text-decoration: none;
+    color: #495057;
+    margin-left: 1.5rem;
+    font-weight: 500;
+    padding: 0.5rem 0;
+    border-bottom: 2px solid transparent;
+}
+
+.main-nav a.active, .main-nav a:hover {
+    color: var(--primary-color);
+    border-bottom-color: var(--primary-color);
 }
 
 #breadcrumbs {
@@ -91,9 +112,104 @@ header h1 {
     color: #495057;
 }
 
-.card .label {
+/* Search Styles */
+.search-container {
+    background: white;
+    padding: 2rem;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    box-shadow: var(--shadow);
+}
+
+.filters {
+    display: flex;
+    gap: 1.5rem;
+    align-items: flex-end;
+    margin-bottom: 2rem;
+    padding-bottom: 2rem;
+    border-bottom: 1px solid var(--border-color);
+    flex-wrap: wrap;
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.form-group label {
+    font-size: 0.85rem;
     font-weight: 600;
-    color: #343a40;
+    color: #495057;
+}
+
+.form-group input, .form-group select {
+    padding: 0.5rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    min-width: 150px;
+    font-family: inherit;
+}
+
+.btn-primary {
+    background-color: var(--primary-color);
+    color: white;
+    border: none;
+    padding: 0.6rem 1.2rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.btn-primary:hover {
+    background-color: var(--primary-hover);
+}
+
+.site-group {
+    margin-top: 2rem;
+}
+
+.site-group h3 {
+    border-bottom: 2px solid var(--bg-color);
+    padding-bottom: 0.5rem;
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.badge {
+    background: #e9ecef;
+    color: #495057;
+    padding: 0.2rem 0.6rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+}
+
+.mini-card h4 {
+    margin: 0 0 0.5rem 0;
+    color: var(--text-color);
+}
+
+.mini-stats {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+.mini-stats span {
+    background: #f1f3f5;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    color: #495057;
+}
+
+.empty-state {
+    text-align: center;
+    color: #6c757d;
+    padding: 3rem;
+    font-style: italic;
 }
 
 /* Node Details */
