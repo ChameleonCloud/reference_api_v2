@@ -5,6 +5,7 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Path as FastApiPath, Query
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from git import InvalidGitRepositoryError, Repo
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -27,6 +28,11 @@ app = FastAPI(
     description="Serves reference-repository JSON files as a REST API."
 )
 app.add_middleware(JsonExtensionMiddleware)
+
+# Mount the UI.
+# Note: We mount it at /ui.
+ui_path = Path(__file__).resolve().parents[1] / "ui"
+app.mount("/ui", StaticFiles(directory=ui_path, html=True), name="ui")
 
 
 @lru_cache(maxsize=1)

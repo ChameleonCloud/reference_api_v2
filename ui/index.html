@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chameleon Resource Browser</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <header>
+        <div class="container">
+            <h1>Chameleon Resource Browser</h1>
+        </div>
+    </header>
+
+    <main class="container">
+        <nav id="breadcrumbs" aria-label="Breadcrumb">
+            <!-- Breadcrumbs will be injected here -->
+        </nav>
+
+        <div id="content">
+            <!-- Dynamic content will be injected here -->
+            <div id="loading" class="hidden">Loading...</div>
+            <div id="error" class="hidden"></div>
+        </div>
+    </main>
+
+    <script src="app.js"></script>
+</body>
+</html>
