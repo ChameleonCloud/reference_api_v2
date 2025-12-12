@@ -13,24 +13,34 @@
     <header>
         <div class="container header-content">
             <h1>Chameleon Resource Browser</h1>
-            <nav class="main-nav">
-                <a href="#" id="nav-browse" class="active">Browse</a>
-                <a href="#" id="nav-search">Search</a>
-            </nav>
         </div>
     </header>
 
-    <main class="container">
-        <nav id="breadcrumbs" aria-label="Breadcrumb">
-            <!-- Breadcrumbs will be injected here -->
-        </nav>
+    <div class="container content-wrapper">
+        <aside id="sidebar">
 
-        <div id="content">
-            <!-- Dynamic content will be injected here -->
-            <div id="loading" class="hidden">Loading...</div>
-            <div id="error" class="hidden"></div>
-        </div>
-    </main>
+            <div id="advanced-filters">
+                <!-- Injected via JS -->
+            </div>
+        </aside>
+
+        <main class="main-content">
+            <div id="search-panel">
+                <!-- Top bar filters -->
+            </div>
+            <div id="stats-bar"></div>
+            
+            <nav id="breadcrumbs" aria-label="Breadcrumb">
+                <!-- Breadcrumbs -->
+            </nav>
+
+            <div id="content" class="fade-in">
+                <!-- Dynamic Content -->
+                <div id="loading" class="hidden">Loading...</div>
+                <div id="error" class="hidden"></div>
+            </div>
+        </main>
+    </div>
 
     <script src="app.js"></script>
 </body>

@@ -3,8 +3,9 @@ const API_BASE = '..'; // Relative path from /ui/ to /
 // State
 const state = {
     path: [], 
-    view: 'sites',
-    facets: { node_types: [], gpu_models: [] }
+    facets: { node_types: [], gpu_models: [] },
+    allNodes: [], // Cache of ALL nodes for client-side filtering
+    siteCounts: {}, // Total nodes per site
 };
 
 // DOM Elements
@@ -12,120 +13,20 @@ const content = document.getElementById('content');
 const breadcrumbs = document.getElementById('breadcrumbs');
 const loading = document.getElementById('loading');
 const error = document.getElementById('error');
-const searchLink = document.getElementById('nav-search');
-const browseLink = document.getElementById('nav-browse');
+const searchPanel = document.getElementById('search-panel');
+const sidebar = document.getElementById('advanced-filters');
+const statsBar = document.getElementById('stats-bar');
 
-// Router/Navigator
-function navigateTo(view, id = null, name = null) {
-    state.view = view === 'search' ? 'search' : 'sites';
-    updateNavState();
+// State for active site filter removed in favor of DOM state (like others)
 
-    if (view === 'search') {
-        state.path = [{ name: 'Search', view: 'search', id: null }];
-        renderSearch();
-    } else if (view === 'sites') {
-        state.path = [{ name: 'Sites', view: 'sites', id: null }];
-        fetchSites();
-    } else if (view === 'site') {
-        // Find if we are going back or forward
-        const idx = state.path.findIndex(p => p.view === 'site' && p.id === id);
-        if (idx !== -1) {
-             state.path = state.path.slice(0, idx + 1);
-        } else {
-            state.path.push({ name: name || id, view: 'site', id: id });
-        }
-        fetchClusters(id);
-    } else if (view === 'cluster') {
-        const idx = state.path.findIndex(p => p.view === 'cluster' && p.id === id);
-        if (idx !== -1) {
-             state.path = state.path.slice(0, idx + 1);
-        } else {
-            state.path.push({ name: name || id, view: 'cluster', id: id });
-        }
-        fetchNodes(state.path.find(p => p.view === 'site').id, id);
-    } else if (view === 'node') {
-         // arguments[3] and [4] might be site_id/cluster_id if coming from search
-         const siteId = state.path.find(p => p.view === 'site')?.id || arguments[3]; 
-         const clusterId = state.path.find(p => p.view === 'cluster')?.id || arguments[4];
-         
-         state.path.push({ name: name || id, view: 'node', id: id, siteId, clusterId });
-         fetchNodeDetails(siteId, clusterId, id);
-    }
-    renderBreadcrumbs();
+
+function navigateToNode(siteId, clusterId, nodeId) {
+    fetchNodeDetails(siteId, clusterId, nodeId);
 }
 
-function renderBreadcrumbs() {
-    breadcrumbs.innerHTML = '';
-    state.path.forEach((step, index) => {
-        if (index > 0) {
-            const separator = document.createElement('span');
-            separator.textContent = '/';
-            breadcrumbs.appendChild(separator);
-        }
-        
-        if (index === state.path.length - 1) {
-            const active = document.createElement('span');
-            active.textContent = step.name;
-            active.style.color = 'var(--text-color)';
-            active.style.fontWeight = '500';
-            breadcrumbs.appendChild(active);
-        } else {
-            const link = document.createElement('a');
-            link.href = '#';
-            link.textContent = step.name;
-            link.onclick = (e) => {
-                e.preventDefault();
-                // Reconstruct path up to this point
-                state.path = state.path.slice(0, index); // pop until just before
-                navigateTo(step.view, step.id, step.name);
-            };
-            breadcrumbs.appendChild(link);
-        }
-    });
-}
-
-// API Calls & Renderers
-
-async function fetchSites() {
-    setLoading(true);
-    try {
-        const res = await fetch(`${API_BASE}/sites?limit=100`);
-        const data = await res.json();
-        renderGrid(data.items, 'site');
-    } catch (e) {
-        showError(e);
-    } finally {
-        setLoading(false);
-    }
-}
-
-async function fetchClusters(siteId) {
-    setLoading(true);
-    try {
-        const res = await fetch(`${API_BASE}/sites/${siteId}/clusters?limit=100`);
-        const data = await res.json();
-        renderGrid(data.items, 'cluster');
-    } catch (e) {
-        showError(e);
-    } finally {
-        setLoading(false);
-    }
-}
-
-async function fetchNodes(siteId, clusterId) {
-    setLoading(true);
-    try {
-        const res = await fetch(`${API_BASE}/sites/${siteId}/clusters/${clusterId}/nodes?limit=100`);
-        const data = await res.json();
-        renderGrid(data.items, 'node');
-    } catch (e) {
-        showError(e);
-    } finally {
-        setLoading(false);
-    }
-}
-
+// Re-implement Detail Fetch
 async function fetchNodeDetails(siteId, clusterId, nodeId) {
+    // Only one not refactored yet
     setLoading(true);
     try {
         const res = await fetch(`${API_BASE}/sites/${siteId}/clusters/${clusterId}/nodes/${nodeId}`);
@@ -141,75 +42,138 @@ async function fetchNodeDetails(siteId, clusterId, nodeId) {
 // Search & filters
 
 
-async function fetchFacets() {
+
+async function initData() {
     try {
-        const res = await fetch(`${API_BASE}/nodes/facets`);
-        state.facets = await res.json();
+        // 1. Facets
+        const fRes = await fetch(`${API_BASE}/nodes/facets`);
+        state.facets = await fRes.json();
+        
+        // 2. All Nodes (for client side search & stats)
+        const nRes = await fetch(`${API_BASE}/nodes`);
+        state.allNodes = await nRes.json();
+        
+        // Calculate baselines
+        state.siteCounts = {};
+        state.allNodes.forEach(n => {
+            const s = n.site_id || 'Unknown';
+            state.siteCounts[s] = (state.siteCounts[s] || 0) + 1;
+        });
+        
     } catch (e) {
-        console.error('Failed to fetch facets', e);
+        console.error('Failed to init data', e);
+        showError('Failed to load initial data.');
     }
 }
 
-async function fetchSearchResults(filters) {
-    // Determine target container for loading state
-    // If first load, might use full page loading. If update, maybe just overlay?
-    // For now simple global loading is OK but might be flashy.
-    // Let's rely on renderSearchResults to clear empty states.
-    
-    // We do NOT want to wipe the whole content if we are just re-filtering
-    // But current structure wipes content.innerHTML in setLoading.
-    // Let's optimize: only show spinner if we don't have results? 
-    // Or just overlay a spinner on the results div?
-    
-    const resultsContainer = document.getElementById('search-results');
-    if (resultsContainer) {
-        resultsContainer.style.opacity = '0.5';
-    }
+function runClientSearch(filters) {
+    // 1. Filter by Specs (Global - ignores Site selection)
+    // This allows us to show "5 matches" on the UC button even if TACC is selected.
+    const specMatches = state.allNodes.filter(node => {
+        // Node Type (OR logic)
+        if (filters.node_type && filters.node_type.length > 0 && !filters.node_type.includes(node.node_type)) {
+            return false;
+        }
+        
+        // GPU Model (OR logic)
+        if (filters.gpu_model && filters.gpu_model.length > 0) {
+             const model = node.gpu?.gpu_model || "";
+             const match = filters.gpu_model.some(f => model.includes(f));
+             if (!match) return false;
+        }
+        
+        // Min GPU
+        if (filters.min_gpu) {
+            const count = node.gpu?.gpu_count || 0;
+            if (count < parseInt(filters.min_gpu)) return false;
+        }
+        
+        // Min RAM
+        if (filters.min_ram_gb) {
+             const ramBytes = node.main_memory?.ram_size || 0;
+             const minBytes = parseInt(filters.min_ram_gb) * 1024 * 1024 * 1024;
+             if (ramBytes < minBytes) return false;
+        }
 
-    try {
-        const params = new URLSearchParams();
-        if (filters.min_gpu) params.append('min_gpu', filters.min_gpu);
-        if (filters.min_ram_gb) params.append('min_ram_gb', filters.min_ram_gb);
-        if (filters.architecture) params.append('architecture', filters.architecture);
-        if (filters.node_type) params.append('node_type', filters.node_type);
-        if (filters.gpu_model) params.append('gpu_model', filters.gpu_model);
+        // Arch (OR logic)
+        if (filters.architecture && filters.architecture.length > 0) {
+             const arch = node.architecture?.platform_type || "";
+             if (!filters.architecture.includes(arch)) return false;
+        }
 
-        const res = await fetch(`${API_BASE}/nodes?${params.toString()}`);
-        const items = await res.json();
-        renderSearchResults(items);
-    } catch (e) {
-        showError(e);
-    } finally {
-        if (resultsContainer) resultsContainer.style.opacity = '1';
-    }
+        // Storage Type (OR logic)
+        if (filters.storage_type && filters.storage_type.length > 0) {
+            const devices = node.storage_devices || [];
+            const matchesStorage = filters.storage_type.some(type => {
+                if (type === 'NVMe') {
+                    return devices.some(d => 
+                        (d.interface && d.interface.includes('PCIe')) || 
+                        (d.model && d.model.includes('NVMe')) ||
+                        (d.node_type === 'storage_nvme')
+                    );
+                } else if (type === 'SSD') {
+                    return devices.some(d => d.media_type === 'SSD');
+                } else if (type === 'HDD') {
+                    return devices.some(d => d.media_type === 'HDD');
+                }
+                return false;
+            });
+            if (!matchesStorage) return false;
+        }
+
+        // InfiniBand
+        if (filters.infiniband) {
+            const adapters = node.network_adapters || [];
+            const hasIb = adapters.some(a => a.interface === 'InfiniBand');
+            if (!hasIb) return false;
+        }
+        
+        return true;
+    });
+
+    // 2. Calculate Site Matches (from specMatches)
+    const siteMatchCounts = {};
+    specMatches.forEach(n => {
+        const s = n.site_id || 'Unknown';
+        siteMatchCounts[s] = (siteMatchCounts[s] || 0) + 1;
+    });
+    
+    // 3. Apply Site Filter (for Table & Facet Context)
+    // Now handled via filters.site array (OR logic)
+    const tableMatches = (filters.site && filters.site.length > 0)
+        ? specMatches.filter(n => filters.site.includes(n.site_id))
+        : specMatches;
+    
+    renderSearchResults(tableMatches);
+    updateFacets(tableMatches, siteMatchCounts, filters.site);
 }
 
 let debounceTimer = null;
 function debouncedSearch() {
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
+        // Collect Multi-Select Values
+        const getCheckedValues = (name) => {
+            return Array.from(document.querySelectorAll(`input[name="${name}"]:checked`))
+                        .map(cb => cb.value);
+        };
+
         const filters = {
              min_gpu: document.getElementById('filter-gpu')?.value,
              min_ram_gb: document.getElementById('filter-ram')?.value,
-             architecture: document.getElementById('filter-arch')?.value,
-             node_type: document.getElementById('filter-type')?.value,
-             gpu_model: document.getElementById('filter-gpu-model')?.value
+             site: getCheckedValues('site'),                 // Array [NEW]
+             architecture: getCheckedValues('architecture'), // Array
+             node_type: getCheckedValues('node_type'),       // Array
+             gpu_model: getCheckedValues('gpu_model'),       // Array
+             storage_type: getCheckedValues('storage_type'), // Array
+             infiniband: document.getElementById('filter-infiniband')?.checked
         };
-        fetchSearchResults(filters);
-    }, 300);
+        
+        runClientSearch(filters);
+    }, 100); 
 }
 
 // UI Helpers
-
-function updateNavState() {
-     if (state.view === 'search') {
-         searchLink?.classList.add('active');
-         browseLink?.classList.remove('active');
-     } else {
-         searchLink?.classList.remove('active');
-         browseLink?.classList.add('active');
-     }
-}
 
 function setLoading(isLoading) {
     if (isLoading) {
@@ -256,122 +220,401 @@ function renderGrid(items, type) {
             <p>${subtitle}</p>
         `;
         
-        card.onclick = () => {
-             navigateTo(type, item.uid, title);
-        };
-        grid.appendChild(card);
     });
 
     content.appendChild(grid);
 }
 
+// Helper to toggle a whole family of checkboxes
+window.toggleFamily = function(familyName, isChecked) {
+    const inputs = document.querySelectorAll(`input[data-family="${familyName}"]`);
+    inputs.forEach(input => {
+        input.checked = isChecked;
+    });
+    debouncedSearch();
+};
 
-function renderSearch() {
-    // Build options
-    
-    // Node Types
-    const typeOpts = state.facets.node_types.map(t => `<option value="${t}">${t}</option>`).join('');
-    
-    // GPU Models
-    const gpuOpts = state.facets.gpu_models.map(m => `<option value="${m}">${m}</option>`).join('');
+function initSidebar() {
+    sidebar.innerHTML = '<div id="dynamic-facets"></div>';
+}
 
-    content.innerHTML = `
-        <div class="search-container">
-            <div class="filters">
-                 <div class="form-group">
-                    <label>Min GPUs</label>
-                    <input type="number" id="filter-gpu" min="0" placeholder="e.g. 1" oninput="debouncedSearch()">
-                 </div>
-                 <div class="form-group">
-                    <label>Min RAM (GiB)</label>
-                    <input type="number" id="filter-ram" min="0" placeholder="e.g. 128" oninput="debouncedSearch()">
-                 </div>
-                 <div class="form-group">
-                    <label>Architecture</label>
-                    <select id="filter-arch" onchange="debouncedSearch()">
-                        <option value="">Any</option>
-                        <option value="x86_64">x86_64</option>
-                        <option value="arm64">arm64</option>
-                    </select>
-                 </div>
-                 <div class="form-group">
-                    <label>Node Type</label>
-                    <select id="filter-type" onchange="debouncedSearch()">
-                        <option value="">Any</option>
-                        ${typeOpts}
-                    </select>
-                 </div>
-                 <div class="form-group">
-                    <label>GPU Model</label>
-                    <select id="filter-gpu-model" onchange="debouncedSearch()">
-                        <option value="">Any</option>
-                        ${gpuOpts}
-                    </select>
-                 </div>
+function renderFacetGroup(id, title, items, selectedValues) {
+    if (!items || items.length === 0) return '';
+    
+    // Sort items by count desc
+    items.sort((a,b) => b.count - a.count);
+
+    // Determine default open state
+    // Open 'GPU Models' and 'Compute Flavors' by default
+    // const isOpen = (title.includes('GPU') || title.includes('Compute') || selectedValues.size > 0) ? 'open' : '';
+    const isOpen = (selectedValues.size > 0) ? 'open' : '';
+
+    const listHtml = items.map(item => {
+        const isChecked = selectedValues.has(item.value) ? 'checked' : '';
+        return `
+            <div class="facet-item">
+                <input type="checkbox" name="${id}" value="${item.value}" ${isChecked} onchange="debouncedSearch()">
+                <label title="${item.value}">${item.value}</label>
+                <span class="facet-count">${item.count}</span>
             </div>
-            <div id="search-results">
-                 <!-- Auto loaded -->
-            </div>
+        `;
+    }).join('');
+
+    return `
+        <div class="facet-group">
+            <details ${isOpen}>
+                <summary>${title}</summary>
+                <div class="facet-list">
+                    ${listHtml}
+                </div>
+            </details>
         </div>
     `;
-
-    // Trigger initial search
-    debouncedSearch();
 }
 
-function renderSearchResults(nodes) {
-    const container = document.getElementById('search-results');
-    if (!container) return; 
+function updateFacets(contextNodes, siteMatchCounts, selectedSites) {
+    // 1. Facet Counts (based on contextNodes - screened by active site)
+    const counts = {
+        node_type: {},
+        gpu_model: {},
+        storage_type: { 'NVMe': 0, 'SSD': 0, 'HDD': 0 },
+        architecture: { 'x86_64': 0, 'arm64': 0 }
+    };
     
-    if (!nodes || nodes.length === 0) {
-        container.innerHTML = '<div class="empty-state">No nodes found matching criteria.</div>';
-        return;
-    }
+    contextNodes.forEach(n => {
+        // Node Type
+        counts.node_type[n.node_type] = (counts.node_type[n.node_type] || 0) + 1;
+        
+        // GPU
+        if (n.gpu && n.gpu.gpu_model) {
+            counts.gpu_model[n.gpu.gpu_model] = (counts.gpu_model[n.gpu.gpu_model] || 0) + 1;
+        }
+        
+        // Arch
+        if (n.architecture && n.architecture.platform_type) {
+            counts.architecture[n.architecture.platform_type] = (counts.architecture[n.architecture.platform_type] || 0) + 1;
+        }
 
-    // Group by Site
-    const bySite = {};
-    nodes.forEach(n => {
-        const site = n.site_id || 'Unknown';
-        if (!bySite[site]) bySite[site] = [];
-        bySite[site].push(n);
+        // Storage
+        const devices = n.storage_devices || [];
+        if (devices.some(d => (d.interface && d.interface.includes('PCIe')) || (d.model && d.model.includes('NVMe')) || d.node_type === 'storage_nvme')) {
+            counts.storage_type['NVMe']++;
+        }
+        if (devices.some(d => d.media_type === 'SSD')) counts.storage_type['SSD']++;
+        if (devices.some(d => d.media_type === 'HDD')) counts.storage_type['HDD']++;
+    });
+    
+    // 2. Get Current Selection (to maintain UI state)
+    const getSelected = (name) => new Set(Array.from(document.querySelectorAll(`input[name="${name}"]:checked`)).map(cb => cb.value));
+    
+    const selected = {
+        node_type: getSelected('node_type'),
+        gpu_model: getSelected('gpu_model'),
+        storage_type: getSelected('storage_type'),
+        architecture: getSelected('architecture')
+    };
+    
+    // 3. Transform to Array for Render
+    const toItems = (obj) => Object.entries(obj).map(([val, count]) => ({ value: val, count }));
+    
+    let html = '';
+
+    // 1. Site Filter (Sidebar Top)
+    // Sort sites by TOTAL count
+    const sortedSites = Object.entries(state.siteCounts).sort((a,b) => b[1] - a[1]);
+    
+    // Transform to items with custom count string "Matched / Total"
+    const siteItems = sortedSites.map(([site, total]) => {
+        const matched = siteMatchCounts[site] || 0;
+        return {
+            value: site,
+            count: `${matched} / ${total}` // Pass formatted string
+        };
     });
 
-    let html = `<div class="results-header">Found ${nodes.length} nodes across ${Object.keys(bySite).length} sites.</div>`;
+    const selectedSiteSet = new Set(selectedSites || []); // passed from runClientSearch
 
-    for (const [site, siteNodes] of Object.entries(bySite)) {
-        html += `
-            <div class="site-group">
-                <h3>Site: ${site} <span class="badge">${siteNodes.length}</span></h3>
-                <div class="grid">
-        `;
+    // Reuse renderFacetGroup but we need to ensure it handles string counts nicely (it does, likely)
+    // Only caveat: The 'value' in renderFacetGroup becomes the label. We want 'site' (e.g. TACC) as label.
+    // It works fine.
+    
+    html += renderFacetGroup('site', 'Site', siteItems, selectedSiteSet);
+    
+    // 2. Node Factors (Second)
+    const families = {
+        'GPU Nodes': [],
+        'Compute Nodes': [],
+        'Storage Nodes': [],
+        'Other': []
+    };
+    
+    Object.entries(counts.node_type).forEach(([type, count]) => {
+        let family = 'Other';
+        if (type.startsWith('gpu')) family = 'GPU Nodes';
+        else if (type.startsWith('compute') || type.startsWith('arm')) family = 'Compute Nodes';
+        else if (type.startsWith('storage')) family = 'Storage Nodes';
+        else if (type.includes('fpga')) family = 'Other';
         
-        siteNodes.forEach(node => {
-            // Re-use card style but minimal
-            html += `
-                <div class="card mini-card" onclick="navigateTo('node', '${node.uid}', '', '${node.site_id}', '${node.cluster_id}')">
-                    <h4>${node.node_name || node.uid}</h4>
-                    <p>${node.node_type}</p>
-                    <div class="mini-stats">
-                        <span>${node.gpu && node.gpu.gpu ? (node.gpu.gpu_count || 1) + ' GPU' : 'No GPU'}</span>
-                        <span>${node.architecture?.platform_type || ''}</span>
-                    </div>
+        families[family].push({ value: type, count });
+    });
+    
+    // Sort items within families
+    Object.values(families).forEach(list => list.sort((a,b) => b.count - a.count));
+
+    // Render Nested Node Types (No max-height)
+    html += renderNestedNodeTypes(families, selected.node_type);
+
+    // 3. GPU Models
+    html += renderFacetGroup('gpu_model', 'GPUs', toItems(counts.gpu_model), selected.gpu_model);
+    
+    // 4. Storage / Arch
+    html += renderFacetGroup('storage_type', 'Drive Type', toItems(counts.storage_type), selected.storage_type);
+    html += renderFacetGroup('architecture', 'CPU Arch', toItems(counts.architecture), selected.architecture);
+
+    // 5. Advanced Inputs (Bottom)
+    html += renderSidebarInputs();
+
+    document.getElementById('dynamic-facets').innerHTML = html;
+}
+
+function renderNestedNodeTypes(families, selectedSet) {
+    // Families order
+    const order = ['GPU Nodes', 'Compute Nodes', 'Storage Nodes', 'Other'];
+    
+    let innerHtml = '';
+    
+    order.forEach(fam => {
+        const items = families[fam];
+        if (items.length === 0) return;
+        
+        // Check if all items in this family are selected (for parent state)
+        // or if just some are selected.
+        // For simplicity, parent is checked only if user explicitly checked it? 
+        // No, parent is a bulk actor.
+        // Let's rely on "Are all children checked?".
+        const allChecked = items.every(i => selectedSet.has(i.value));
+        const someChecked = items.some(i => selectedSet.has(i.value));
+        
+        const parentChecked = allChecked ? 'checked' : '';
+        // Note: Indeterminate state would be nice but requires JS after render.
+        // For now: Checkbox toggles all.
+        
+        const childrenHtml = items.map(item => {
+            const isChecked = selectedSet.has(item.value) ? 'checked' : '';
+            return `
+                <div class="facet-item">
+                    <input type="checkbox" name="node_type" value="${item.value}" data-family="${fam}" ${isChecked} onchange="debouncedSearch()">
+                    <label title="${item.value}">${item.value}</label>
+                    <span class="facet-count">${item.count}</span>
                 </div>
             `;
-        });
+        }).join('');
 
-        html += `
+        innerHtml += `
+            <div class="nested-category">
+                <div class="nested-header">
+                    <input type="checkbox" ${parentChecked} onchange="toggleFamily('${fam}', this.checked)">
+                    <span>${fam}</span>
+                </div>
+                <div class="nested-children">
+                    ${childrenHtml}
                 </div>
             </div>
         `;
-    }
+    });
 
-    container.innerHTML = html;
-    
-    // Patch navigateTo to handle jumping to node details from search where we iterate context
-    // Actually, navigateTo takes (view, id, name). WE need site_id and cluster_id for fetchNodeDetails.
-    // Let's attach them to the card click logic directly above using a modified call, or changing navigateTo signature.
-    // See modified card click handler above.
+    return `
+        <div class="facet-group">
+            <details open>
+                <summary>Node Type</summary>
+                <div class="facet-list" style="max-height:none;">
+                    ${innerHtml}
+                </div>
+            </details>
+        </div>
+    `;
 }
+
+// Helper to toggle group rows
+window.toggleGroup = function(key) {
+    const row = document.getElementById(`group-row-${key}`);
+    const details = document.getElementById(`group-details-${key}`);
+    if (row && details) {
+        if (details.classList.contains('expanded')) {
+            details.classList.remove('expanded');
+            row.classList.remove('expanded');
+        } else {
+            details.classList.add('expanded');
+            row.classList.add('expanded');
+        }
+    }
+};
+
+// Helper to clean CPU strings
+function cleanCpuModel(model) {
+    if (!model) return 'Unknown';
+    return model
+        .replace(/Intel\(R\)\s*/gi, '')
+        .replace(/Xeon\(R\)\s*/gi, 'Xeon')
+        .replace(/AMD\s*/gi, '')
+        .replace(/Core\(TM\)\s*/gi, '')
+        .replace(/\s*CPU\s*@\s*[\d\.]+[a-zA-Z]+/gi, '') // Remove frequency at end
+        .replace(/\s*Processor/gi, '')
+        .replace(/-Core/gi, ' Core')
+        .trim();
+}
+
+function renderSearchResults(matches) {
+    const content = document.getElementById('content');
+    content.innerHTML = '';
+
+    if (matches.length === 0) {
+        content.innerHTML = '<div class="alert alert-info">No nodes found matching criteria.</div>';
+        return;
+    }
+    
+    // Group Results
+    const groups = groupNodes(matches);
+
+    // Create Card Container
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.style.padding = '0'; // Custom padding for table
+    card.style.overflow = 'hidden';
+
+    // Header inside card
+    const header = document.createElement('div');
+    header.style.padding = '1.5rem';
+    header.style.borderBottom = '1px solid var(--border-color)';
+    header.style.background = 'white'; // Ensure bg
+    header.innerHTML = `<h3 style="margin:0; font-size:1.1rem;">${matches.length} Matching Nodes</h3>`;
+    card.appendChild(header);
+
+    const table = document.createElement('table');
+    table.className = 'table table-dense';
+    table.style.margin = '0'; // Reset margin
+    table.innerHTML = `
+        <thead>
+            <tr>
+                <th>Count</th>
+                <th>Type</th>
+                <th>Site</th>
+                <th>CPU</th>
+                <th>GPU</th>
+                <th>RAM</th>
+            </tr>
+        </thead>
+        <tbody>
+            ${groups.map(group => {
+                const n = group.sample;
+                const key = group.key;
+                
+                // Specs
+                const cpuModel = cleanCpuModel(n.processor?.model);
+                const cpuStr = `${n.architecture?.smp_size || '?'} x ${cpuModel}`;
+                
+                const gpuCount = n.gpu?.gpu_count || 0;
+                // Clean GPU model too
+                let gpuModel = n.gpu?.gpu_model || '';
+                gpuModel = gpuModel.replace(/Tesla\s*/gi, '').replace(/NVIDIA\s*/gi, '');
+                
+                const gpuStr = gpuCount > 0 ? `${gpuCount} x ${gpuModel}` : '-';
+                const ramStr = n.main_memory?.humanized_ram_size || '-';
+                
+                // Details Grid
+                const detailsHtml = group.nodes.map(node => `
+                    <a href="#" onclick="navigateToNode('${node.uid}'); return false;" class="node-link-item" title="${node.uid}">
+                        ${node.node_name || node.uid.substring(0,8)}
+                    </a>
+                `).join('');
+
+                return `
+                    <tr class="group-row" id="group-row-${key}" onclick="toggleGroup('${key}')">
+                        <td>
+                            <div class="group-toggle-wrapper">
+                                <i class="group-toggle-icon">▶</i>
+                                <span style="font-weight:700">${group.nodes.length}</span>
+                            </div>
+                        </td>
+                        <td style="font-weight:600">${n.node_type}</td>
+                        <td>${n.site_id?.toUpperCase()}</td>
+                        <td>${cpuStr}</td>
+                        <td>${gpuStr}</td>
+                        <td>${ramStr}</td>
+                    </tr>
+                    <tr class="group-details-row" id="group-details-${key}">
+                        <td colspan="6" class="group-details-content">
+                            <div class="node-grid-compact">
+                                ${detailsHtml}
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join('')}
+        </tbody>
+    `;
+    
+    card.appendChild(table);
+    content.appendChild(card);
+}
+
+function groupNodes(nodes) {
+    const groups = {};
+    nodes.forEach(n => {
+        // Key: Site + Type + GPU + RAM
+        // This ensures strictly identical hardware logic (user requested)
+        const gpuKey = n.gpu?.gpu_model || 'none';
+        const gpuCount = n.gpu?.gpu_count || 0;
+        const ramKey = n.main_memory?.ram_size || 0;
+        
+        // Use a safe ID string
+        const key = `${n.site_id}-${n.node_type}-${gpuKey}-${gpuCount}-${ramKey}`.replace(/[^a-zA-Z0-9-]/g, '_');
+        
+        if (!groups[key]) {
+            groups[key] = {
+                key: key,
+                sample: n,
+                nodes: []
+            };
+        }
+        groups[key].nodes.push(n);
+    });
+    
+    // Convert to array and sort by COUNT DESC, then site, then type
+    return Object.values(groups).sort((a,b) => {
+        if (b.nodes.length !== a.nodes.length) return b.nodes.length - a.nodes.length;
+        if (a.sample.site_id !== b.sample.site_id) return a.sample.site_id.localeCompare(b.sample.site_id);
+        return a.sample.node_type.localeCompare(b.sample.node_type);
+    });
+}
+
+function renderSidebarInputs() {
+    return `
+        <div class="facet-group">
+            <details>
+                <summary>Advanced Specs</summary>
+                <div class="facet-list" style="max-height:none; padding: 0.75rem;">
+                    <div class="form-group">
+                        <label>Min GPUs</label>
+                        <input type="number" id="filter-gpu" min="0" placeholder="-" oninput="debouncedSearch()">
+                    </div>
+                    <div class="form-group">
+                        <label>Min RAM (GiB)</label>
+                        <input type="number" id="filter-ram" min="0" placeholder="-" oninput="debouncedSearch()">
+                    </div>
+                    <div class="form-group checkbox-group" style="margin-top:0.5rem">
+                        <label>
+                            <input type="checkbox" id="filter-infiniband" onchange="debouncedSearch()">
+                            Has InfiniBand
+                        </label>
+                    </div>
+                </div>
+            </details>
+        </div>
+    `;
+}
+
+
 
 function renderNodeDetail(node) {
     content.innerHTML = '';
@@ -435,12 +678,10 @@ function renderNodeDetail(node) {
 
 // Init
 window.addEventListener('DOMContentLoaded', async () => {
-    // Add event listeners for new nav if created in index.html, handled in navigateTo
-    if (searchLink) searchLink.onclick = (e) => { e.preventDefault(); navigateTo('search'); };
-    if (browseLink) browseLink.onclick = (e) => { e.preventDefault(); navigateTo('sites'); };
-
-    // Prefetch facets for search experience
-    fetchFacets();
-
-    navigateTo('sites');
+    // Prefetch all data for smooth client-side filtering
+    await initData();
+    initSidebar();
+    
+    // Initial Render
+    debouncedSearch(); 
 });
