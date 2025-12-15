@@ -164,8 +164,8 @@ function runClientSearch(filters) {
     
     // Apply availability filter if timeline is active
     if (state.timeline && state.timelineEnabled) {
-        const availableNodeIds = new Set(state.timeline.getAvailableNodeIds());
-        tableMatches = tableMatches.filter(n => availableNodeIds.has(n.uid));
+        // Filter directly using timeline's check method on the candidates
+        tableMatches = tableMatches.filter(n => state.timeline.isNodeAvailableInWindow(n.uid));
     }
     
     renderSearchResults(tableMatches);

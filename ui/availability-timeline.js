@@ -17,7 +17,7 @@ class AvailabilityTimeline {
 
         // Configuration
         this.options = {
-            defaultRangeDays: 7,
+            defaultRangeDays: 30, // Extended to 30 days
             defaultWindowHours: 24,
             height: 200,
             margin: { top: 20, right: 40, bottom: 40, left: 60 },
@@ -42,8 +42,9 @@ class AvailabilityTimeline {
 
     getDefaultTimeRange() {
         const now = new Date();
-        const start = new Date(now);
-        const end = new Date(now);
+        // Start 24 hours ago
+        const start = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+        const end = new Date(start);
         end.setDate(end.getDate() + this.options.defaultRangeDays);
         return { start, end };
     }
@@ -345,8 +346,18 @@ class AvailabilityTimeline {
             const endTime = new Date(this.timeRange.end);
             
             while (currentTime < endTime) {
-                // Decide if this period is available or reserved
-                const isAvailable = Math.random() < availabilityRate;
+                // Calculate time factor (0.0 at start, 1.0 at end)
+                // "Busy now, free later" => low availability probability at start
+                const timeFactor = (currentTime - this.timeRange.start) / (this.timeRange.end - this.timeRange.start);
+                
+                // Adjusted availability rate:
+                // At t=0 (near now), rate is much lower (0.2 * base)
+                // At t=1 (end), rate approaches base * 1.5 (or max 1.0)
+                // This biases reservations to be heavy at the start
+                const biasFactor = 0.2 + (0.8 * timeFactor); // 0.2 -> 1.0
+                const currentProb = Math.min(0.95, availabilityRate * biasFactor);
+
+                const isAvailable = Math.random() < currentProb;
                 
                 if (isAvailable) {
                     // Generate an available window
@@ -368,8 +379,11 @@ class AvailabilityTimeline {
                     currentTime = actualEnd;
                 } else {
                     // Generate a reserved window
+                    // Most reservations start "now", so if we are here (reserved state),
+                    // the duration might be long if it's near "now".
                     const minHours = 2;
-                    const maxHours = 7 * 24;
+                    // Reservations can be up to 2 weeks if near start
+                    const maxHours = 7 * 24 * (1 + (1 - timeFactor)); 
                     const durationHours = minHours + (maxHours - minHours) * Math.pow(Math.random(), 1.5);
                     
                     const windowEnd = new Date(currentTime.getTime() + durationHours * 60 * 60 * 1000);
@@ -387,19 +401,42 @@ class AvailabilityTimeline {
         const intervalMinutes = 30;
         
         let current = new Date(this.timeRange.start);
+        
+        // Get duration in ms
+        const durationMs = (this.selectedWindow.end - this.selectedWindow.start);
+
         while (current <= this.timeRange.end) {
             let availableCount = 0;
+            let availableForDurationCount = 0;
+            const rangeEnd = new Date(current.getTime() + durationMs);
             
             // Count how many nodes are available at this time
             nodeIds.forEach(nodeId => {
-                if (this.isNodeAvailableAt(nodeId, current)) {
+                const windows = this.nodeAvailability.get(nodeId);
+                if (!windows) return;
+
+                // Check instantaneous availability
+                const instantaneousWindow = windows.find(window => 
+                    current >= window.start && current <= window.end && window.state === 'available'
+                );
+
+                if (instantaneousWindow) {
                     availableCount++;
+                    
+                    // Check availability for full duration starting from 'current'
+                    // For the node to be available for duration D starting at T,
+                    // the window must contain [T, T+D]
+                    // i.e. window.start <= T && window.end >= T+D
+                    if (instantaneousWindow.end >= rangeEnd) {
+                        availableForDurationCount++;
+                    }
                 }
             });
             
             data.push({
                 time: new Date(current),
-                available: availableCount
+                available: availableCount,
+                availableForDuration: availableForDurationCount
             });
             
             current = new Date(current.getTime() + intervalMinutes * 60 * 1000);
@@ -581,43 +618,140 @@ class AvailabilityTimeline {
         ctx.fillText('Time', this.width / 2, this.height - 5);
     }
 
-    drawAvailabilityChart(maxAvailable) {
-        const ctx = this.ctx;
+    drawAvailabilityChart(maxValue) {
+        if (!this.ctx || this.availabilityData.length === 0) return;
 
-        if (this.availabilityData.length === 0) return;
-
-        // Draw area
-        ctx.fillStyle = 'rgba(37, 99, 235, 0.2)';
-        ctx.beginPath();
+        // Draw area (Light Blue for max availability)
+        this.ctx.beginPath();
+        this.ctx.moveTo(this.options.margin.left, this.valueToY(0, maxValue));
         
-        const firstPoint = this.availabilityData[0];
-        ctx.moveTo(this.timeToX(firstPoint.time), this.valueToY(0, maxAvailable));
-        
-        this.availabilityData.forEach(d => {
-            ctx.lineTo(this.timeToX(d.time), this.valueToY(d.available, maxAvailable));
+        this.availabilityData.forEach((point, index) => {
+            const x = this.timeToX(point.time);
+            const y = this.valueToY(point.available, maxValue);
+            this.ctx.lineTo(x, y);
         });
-
-        const lastPoint = this.availabilityData[this.availabilityData.length - 1];
-        ctx.lineTo(this.timeToX(lastPoint.time), this.valueToY(0, maxAvailable));
-        ctx.closePath();
-        ctx.fill();
-
-        // Draw line
-        ctx.strokeStyle = '#2563eb';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
         
-        this.availabilityData.forEach((d, i) => {
-            const x = this.timeToX(d.time);
-            const y = this.valueToY(d.available, maxAvailable);
-            if (i === 0) {
-                ctx.moveTo(x, y);
-            } else {
-                ctx.lineTo(x, y);
+        this.ctx.lineTo(this.timeToX(this.availabilityData[this.availabilityData.length-1].time), this.valueToY(0, maxValue));
+        this.ctx.fillStyle = 'rgba(66, 133, 244, 0.1)'; 
+        this.ctx.fill();
+        
+        // Draw Instantaneous Line (Blue)
+        this.ctx.beginPath();
+        this.availabilityData.forEach((point, index) => {
+            const x = this.timeToX(point.time);
+            const y = this.valueToY(point.available, maxValue);
+            if (index === 0) this.ctx.moveTo(x, y);
+            else this.ctx.lineTo(x, y);
+        });
+        this.ctx.strokeStyle = '#4285f4'; // Google Blue
+        this.ctx.lineWidth = 2;
+        this.ctx.setLineDash([]);
+        this.ctx.stroke();
+
+        // Draw Duration Availability Line (Green)
+        // Only if duration > 0
+        if (this.selectedWindow.end > this.selectedWindow.start) {
+            this.ctx.beginPath();
+            let hasPoints = false;
+            this.availabilityData.forEach((point, index) => {
+                const x = this.timeToX(point.time);
+                // point.availableForDuration might be undefined if logic failed? No, we init it.
+                // But check just in case
+                const val = point.availableForDuration || 0;
+                const y = this.valueToY(val, maxValue);
+                
+                if (index === 0) {
+                    this.ctx.moveTo(x, y);
+                    hasPoints = true;
+                } else {
+                    this.ctx.lineTo(x, y);
+                }
+            });
+            if (hasPoints) {
+                this.ctx.strokeStyle = '#0f9d58'; // Google Green
+                this.ctx.lineWidth = 2;
+                this.ctx.setLineDash([5, 5]); // Dashed line
+                this.ctx.stroke();
+                this.ctx.setLineDash([]); // Reset dash
             }
-        });
+        }
         
-        ctx.stroke();
+        // Draw Legend
+        this.drawLegend();
+        
+        // Draw selection window
+        this.drawSelectionWindow();
+
+        // Draw "Now" Line
+        this.drawNowLine();
+    }
+
+    drawNowLine() {
+        const now = new Date();
+        // Only draw if 'now' is within visible range
+        if (now < this.timeRange.start || now > this.timeRange.end) return;
+
+        const x = this.timeToX(now);
+        const chartHeight = this.getChartHeight();
+        
+        this.ctx.save();
+        this.ctx.beginPath();
+        this.ctx.moveTo(x, this.options.margin.top);
+        this.ctx.lineTo(x, this.options.margin.top + chartHeight);
+        this.ctx.strokeStyle = '#ea4335'; // Google Red
+        this.ctx.lineWidth = 1.5;
+        this.ctx.stroke();
+        
+        // Label "Now"
+        this.ctx.fillStyle = '#ea4335';
+        this.ctx.textAlign = 'center';
+        this.ctx.font = 'bold 10px Roboto, Arial';
+        this.ctx.fillText("NOW", x, this.options.margin.top - 5);
+        this.ctx.restore();
+    }
+
+    drawLegend() {
+        const legendX = this.options.margin.left + 20;
+        const legendY = 20;
+        const lineHeight = 20;
+        
+        this.ctx.font = '12px "Google Sans", Roboto, Arial, sans-serif';
+        this.ctx.textAlign = 'left';
+        this.ctx.textBaseline = 'middle';
+        
+        // Instantaneous item
+        this.ctx.fillStyle = '#4285f4';
+        this.ctx.fillRect(legendX, legendY - 6, 12, 12);
+        this.ctx.fillStyle = '#5f6368';
+        this.ctx.fillText("Instantaneous Availability", legendX + 18, legendY);
+        
+        // Duration item
+        this.ctx.fillStyle = '#0f9d58';
+        this.ctx.fillRect(legendX, legendY + lineHeight - 6, 12, 12);
+        this.ctx.fillStyle = '#5f6368';
+        this.ctx.fillText(`Available for ${this.selectedWindow.durationHours?.toFixed(1) || '?'}h`, legendX + 18, legendY + lineHeight);
+    }
+
+    drawSelectionWindow() {
+        const startX = this.timeToX(this.selectedWindow.start);
+        const endX = this.timeToX(this.selectedWindow.end);
+        const chartHeight = this.getChartHeight();
+        
+        this.ctx.save();
+        this.ctx.fillStyle = 'rgba(66, 133, 244, 0.15)';
+        this.ctx.fillRect(startX, this.options.margin.top, endX - startX, chartHeight);
+        
+        // Draw vertical lines at start/end
+        this.ctx.strokeStyle = '#2563eb';
+        this.ctx.lineWidth = 1;
+        this.ctx.beginPath();
+        this.ctx.moveTo(startX, this.options.margin.top);
+        this.ctx.lineTo(startX, this.options.margin.top + chartHeight);
+        this.ctx.moveTo(endX, this.options.margin.top);
+        this.ctx.lineTo(endX, this.options.margin.top + chartHeight);
+        this.ctx.stroke();
+        
+        this.ctx.restore();
     }
 
     drawHandles() {
