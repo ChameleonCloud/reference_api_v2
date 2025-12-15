@@ -289,14 +289,23 @@ class AvailabilityTimeline {
         return this.options.margin.top + chartHeight - (ratio * chartHeight);
     }
 
-    // Update data from external sources
-    async updateAvailability(nodeIds, allNodes = []) {
-        this.matchingNodeIds = nodeIds;
+    // Initialize availability data for all nodes
+    initializeData(allNodes) {
         this.allNodes = allNodes;
-        
-        // TODO: Replace with actual API call
-        // For now, generate realistic mock data per node
+        // Generate realistic mock data per node once
         this.generateNodeAvailabilityWindows(allNodes);
+    }
+
+    // Update data from external sources
+    async updateAvailability(nodeIds) {
+        this.matchingNodeIds = nodeIds;
+        
+        // If no data generated yet, try to generate if we have nodes
+        if (this.nodeAvailability.size === 0 && this.allNodes.length > 0) {
+            this.generateNodeAvailabilityWindows(this.allNodes);
+        }
+        
+        // Aggregate existing availability data for matching nodes
         this.availabilityData = this.aggregateAvailabilityData(nodeIds);
         
         this.render();
@@ -416,8 +425,8 @@ class AvailabilityTimeline {
         
         return windows.some(window => {
             if (window.state !== 'available') return false;
-            // Check for overlap with selected window
-            return window.start < this.selectedWindow.end && window.end > this.selectedWindow.start;
+            // Check if selected window is FULLY contained within availability window
+            return window.start <= this.selectedWindow.start && window.end >= this.selectedWindow.end;
         });
     }
 

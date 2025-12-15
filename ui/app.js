@@ -174,8 +174,7 @@ function runClientSearch(filters) {
     // Update timeline with matching nodes (all nodes that match filters, before availability filter)
     if (state.timeline) {
         state.timeline.updateAvailability(
-            state.unfilteredMatches.map(n => n.uid),
-            state.unfilteredMatches
+            state.unfilteredMatches.map(n => n.uid)
         );
     }
 }
@@ -643,6 +642,12 @@ window.addEventListener('DOMContentLoaded', async () => {
     
     // Prefetch all data for smooth client-side filtering
     await initData();
+    
+    // Initialize timeline with all nodes once
+    if (state.timeline) {
+        state.timeline.initializeData(state.allNodes);
+    }
+    
     initSidebar();
     
     // Initial Render
