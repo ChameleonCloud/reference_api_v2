@@ -390,11 +390,11 @@ pre {
     background: #fff;
     border: 1px solid var(--border-color);
     border-radius: 4px;
-    color: var(--brand-primary);
+    color: var(--brand-info); /* Changed from brand-primary (green) to brand-info (blue) for readability */
     text-decoration: none;
 }
 
 .node-link-item:hover {
-    border-color: var(--brand-primary);
+    border-color: var(--brand-info);
     background: #f0f7fd;
 }

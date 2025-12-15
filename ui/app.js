@@ -4,6 +4,7 @@ const API_BASE = '..'; // Relative path from /ui/ to /
 const state = {
     allNodes: [], // Cache of ALL nodes for client-side filtering
     siteCounts: {}, // Total nodes per site
+    allFacets: { node_types: new Set(), gpu_models: new Set() }, // All possible values for facets
 };
 
 // DOM Elements
@@ -58,6 +59,17 @@ async function initData() {
             state.siteCounts[s] = (state.siteCounts[s] || 0) + 1;
         });
         
+        // Build complete catalog of all possible filter values
+        state.allFacets = {
+            node_types: new Set(),
+            gpu_models: new Set()
+        };
+        
+        state.allNodes.forEach(n => {
+            if (n.node_type) state.allFacets.node_types.add(n.node_type);
+            if (n.gpu && n.gpu.gpu_model) state.allFacets.gpu_models.add(n.gpu.gpu_model);
+        });
+        
     } catch (e) {
         console.error('Failed to init data', e);
         showError('Failed to load initial data.');
@@ -65,14 +77,8 @@ async function initData() {
 }
 
 function runClientSearch(filters) {
-    // 1. Filter by Specs (Global - ignores Site selection)
-    // This allows us to show "5 matches" on the UC button even if TACC is selected.
-    const specMatches = state.allNodes.filter(node => {
-        // Node Type (OR logic)
-        if (filters.node_type && filters.node_type.length > 0 && !filters.node_type.includes(node.node_type)) {
-            return false;
-        }
-        
+    // Filter nodes by non-node-type specs (for showing node type facet counts)
+    const baseMatches = state.allNodes.filter(node => {
         // GPU Model (OR logic)
         if (filters.gpu_model && filters.gpu_model.length > 0) {
              const model = node.gpu?.gpu_model || "";
@@ -129,21 +135,29 @@ function runClientSearch(filters) {
         return true;
     });
 
-    // 2. Calculate Site Matches (from specMatches)
+    // Filter by ALL specs including node_type (for table results and other facets)
+    const specMatches = baseMatches.filter(node => {
+        // Node Type (OR logic)
+        if (filters.node_type && filters.node_type.length > 0 && !filters.node_type.includes(node.node_type)) {
+            return false;
+        }
+        return true;
+    });
+
+    // Calculate Site Matches (from baseMatches for accurate site counts)
     const siteMatchCounts = {};
-    specMatches.forEach(n => {
+    baseMatches.forEach(n => {
         const s = n.site_id || 'Unknown';
         siteMatchCounts[s] = (siteMatchCounts[s] || 0) + 1;
     });
     
-    // 3. Apply Site Filter (for Table & Facet Context)
-    // Now handled via filters.site array (OR logic)
+    // Apply Site Filter (for Table & Facet Context)
     const tableMatches = (filters.site && filters.site.length > 0)
         ? specMatches.filter(n => filters.site.includes(n.site_id))
         : specMatches;
     
     renderSearchResults(tableMatches);
-    updateFacets(tableMatches, siteMatchCounts, filters.site);
+    updateFacets(tableMatches, baseMatches, siteMatchCounts, filters.site);
 }
 
 let debounceTimer = null;
@@ -210,10 +224,8 @@ function renderFacetGroup(id, title, items, selectedValues) {
     // Sort items by count desc
     items.sort((a,b) => b.count - a.count);
 
-    // Determine default open state
-    // Open 'GPU Models' and 'Compute Flavors' by default
-    // const isOpen = (title.includes('GPU') || title.includes('Compute') || selectedValues.size > 0) ? 'open' : '';
-    const isOpen = (selectedValues.size > 0) ? 'open' : '';
+    // Determine default open state - Site is always open, others open if selected
+    const isOpen = (id === 'site' || selectedValues.size > 0) ? 'open' : '';
 
     const listHtml = items.map(item => {
         const isChecked = selectedValues.has(item.value) ? 'checked' : '';
@@ -238,8 +250,11 @@ function renderFacetGroup(id, title, items, selectedValues) {
     `;
 }
 
-function updateFacets(contextNodes, siteMatchCounts, selectedSites) {
-    // 1. Facet Counts (based on contextNodes - screened by active site)
+function updateFacets(contextNodes, baseMatches, siteMatchCounts, selectedSites) {
+    // contextNodes = nodes matching ALL filters (for GPU, arch, storage counts and table display)
+    // baseMatches = nodes matching all NON-node-type filters (for node_type counts - enables OR selection)
+    
+    // 1. Initialize counts with ALL known values from catalog (so they show even with 0 matches)
     const counts = {
         node_type: {},
         gpu_model: {},
@@ -247,10 +262,19 @@ function updateFacets(contextNodes, siteMatchCounts, selectedSites) {
         architecture: { 'x86_64': 0, 'arm64': 0 }
     };
     
+    // Pre-fill with all known node types and GPU models (with 0 counts)
+    state.allFacets.node_types.forEach(nt => counts.node_type[nt] = 0);
+    state.allFacets.gpu_models.forEach(gm => counts.gpu_model[gm] = 0);
+    
+    // Count node types from baseMatches (excludes node_type filter for OR logic)
+    baseMatches.forEach(n => {
+        if (n.node_type) {
+            counts.node_type[n.node_type] = (counts.node_type[n.node_type] || 0) + 1;
+        }
+    });
+    
+    // Count other facets from contextNodes (full filter context)
     contextNodes.forEach(n => {
-        // Node Type
-        counts.node_type[n.node_type] = (counts.node_type[n.node_type] || 0) + 1;
-        
         // GPU
         if (n.gpu && n.gpu.gpu_model) {
             counts.gpu_model[n.gpu.gpu_model] = (counts.gpu_model[n.gpu.gpu_model] || 0) + 1;
