@@ -5,6 +5,9 @@ const state = {
     allNodes: [], // Cache of ALL nodes for client-side filtering
     siteCounts: {}, // Total nodes per site
     allFacets: { node_types: new Set(), gpu_models: new Set() }, // All possible values for facets
+    timeline: null, // Availability timeline component
+    timelineEnabled: true, // Whether to filter by availability
+    unfilteredMatches: [], // Nodes matching filters before availability filter
 };
 
 // DOM Elements
@@ -152,12 +155,29 @@ function runClientSearch(filters) {
     });
     
     // Apply Site Filter (for Table & Facet Context)
-    const tableMatches = (filters.site && filters.site.length > 0)
+    let tableMatches = (filters.site && filters.site.length > 0)
         ? specMatches.filter(n => filters.site.includes(n.site_id))
         : specMatches;
     
+    // Store matches before availability filter for timeline
+    state.unfilteredMatches = tableMatches;
+    
+    // Apply availability filter if timeline is active
+    if (state.timeline && state.timelineEnabled) {
+        const availableNodeIds = new Set(state.timeline.getAvailableNodeIds());
+        tableMatches = tableMatches.filter(n => availableNodeIds.has(n.uid));
+    }
+    
     renderSearchResults(tableMatches);
     updateFacets(tableMatches, baseMatches, siteMatchCounts, filters.site);
+    
+    // Update timeline with matching nodes (all nodes that match filters, before availability filter)
+    if (state.timeline) {
+        state.timeline.updateAvailability(
+            state.unfilteredMatches.map(n => n.uid),
+            state.unfilteredMatches
+        );
+    }
 }
 
 let debounceTimer = null;
@@ -558,7 +578,8 @@ function groupNodes(nodes) {
         const ramKey = n.main_memory?.ram_size || 0;
         
         // Use a safe ID string
-        const key = `${n.site_id}-${n.node_type}-${gpuKey}-${gpuCount}-${ramKey}`.replace(/[^a-zA-Z0-9-]/g, '_');
+        // const key = `${n.site_id}-${n.node_type}-${gpuKey}-${gpuCount}-${ramKey}`.replace(/[^a-zA-Z0-9-]/g, '_');
+        const key = `${n.site_id}-${n.node_type}`.replace(/[^a-zA-Z0-9-]/g, '_');
         
         if (!groups[key]) {
             groups[key] = {
@@ -610,6 +631,16 @@ function renderSidebarInputs() {
 
 // Init
 window.addEventListener('DOMContentLoaded', async () => {
+    // Initialize timeline component
+    if (window.AvailabilityTimeline) {
+        state.timeline = new AvailabilityTimeline('availability-timeline-container');
+        
+        // Register callback to re-filter results when time window changes
+        state.timeline.onWindowChange(() => {
+            debouncedSearch();
+        });
+    }
+    
     // Prefetch all data for smooth client-side filtering
     await initData();
     initSidebar();
@@ -617,3 +648,4 @@ window.addEventListener('DOMContentLoaded', async () => {
     // Initial Render
     debouncedSearch(); 
 });
+

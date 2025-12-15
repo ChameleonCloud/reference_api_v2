@@ -25,6 +25,30 @@
         </aside>
 
         <main class="main-content">
+            <!-- Availability Timeline -->
+            <div id="availability-timeline-container" class="card timeline-card">
+                <div class="timeline-header">
+                    <h3>Node Availability Timeline</h3>
+                </div>
+                <div class="timeline-canvas-wrapper">
+                    <canvas id="availability-canvas"></canvas>
+                </div>
+                <div class="timeline-controls">
+                    <div class="time-picker-group">
+                        <label for="timeline-start">Start</label>
+                        <input type="datetime-local" id="timeline-start" />
+                    </div>
+                    <div class="time-picker-group">
+                        <label for="timeline-end">End</label>
+                        <input type="datetime-local" id="timeline-end" />
+                    </div>
+                    <div class="time-picker-group">
+                        <label for="timeline-duration">Duration (hours)</label>
+                        <input type="number" id="timeline-duration" step="0.5" min="0.5" />
+                    </div>
+                </div>
+            </div>
+
             <div id="content" class="fade-in">
                 <!-- Dynamic Content -->
                 <div id="loading" class="hidden">Loading...</div>
@@ -33,6 +57,7 @@
         </main>
     </div>
 
+    <script src="availability-timeline.js"></script>
     <script src="app.js"></script>
 </body>
 </html>

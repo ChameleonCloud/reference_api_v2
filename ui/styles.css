@@ -398,3 +398,82 @@ pre {
     border-color: var(--brand-info);
     background: #f0f7fd;
 }
+
+/* Availability Timeline */
+.timeline-card {
+    margin-bottom: 2rem;
+    padding: 0;
+    overflow: hidden;
+}
+
+.timeline-header {
+    padding: 1.5rem;
+    border-bottom: 1px solid var(--border-color);
+    background: white;
+}
+
+.timeline-header h3 {
+    margin: 0;
+    font-size: 1.1rem;
+    color: var(--brand-info);
+    border: none;
+    padding: 0;
+}
+
+.timeline-canvas-wrapper {
+    padding: 1.5rem;
+    background: white;
+}
+
+#availability-canvas {
+    display: block;
+    width: 100%;
+    cursor: default;
+}
+
+.timeline-controls {
+    display: flex;
+    gap: 1.5rem;
+    padding: 1.5rem;
+    background: #f8f9fa;
+    border-top: 1px solid var(--border-color);
+    align-items: flex-end;
+}
+
+.time-picker-group {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.time-picker-group label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--grey-dark);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.time-picker-group input {
+    padding: 0.5rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    font-size: 0.9rem;
+    font-family: inherit;
+    transition: border-color 0.2s;
+}
+
+.time-picker-group input:focus {
+    outline: none;
+    border-color: var(--brand-info);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.time-picker-group input[type="number"] {
+    width: 100%;
+}
+
+.time-picker-group input[type="datetime-local"] {
+    width: 100%;
+}
