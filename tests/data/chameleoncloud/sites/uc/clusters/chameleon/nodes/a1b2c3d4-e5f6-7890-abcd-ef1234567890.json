@@ -1,0 +1,10 @@
+{
+  "type": "node",
+  "uid": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "node_name": "nc36",
+  "node_type": "compute_haswell",
+  "gpu": {"gpu": false},
+  "architecture": {"platform_type": "aarch64"},
+  "main_memory": {"ram_size": 68719476736, "humanized_ram_size": "64 GiB"},
+  "infiniband": true
+}

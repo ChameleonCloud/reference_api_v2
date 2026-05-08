@@ -1,7 +1,13 @@
+import asyncio
+import contextlib
+import logging
 import tomllib
 
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
+from typing import Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Path as FastApiPath, Query
 from fastapi.responses import JSONResponse
@@ -10,7 +16,18 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
 from reference_api.api import collections, items
+from reference_api.availability.cache import AvailabilityCache
+from reference_api.availability.models import (
+    NodeAvailabilityResponse,
+    NodeSearchResponse,
+    Reservation,
+    SearchNodeItem,
+)
+from reference_api.availability.worker import run_sync_loop
 from reference_api.services import clusters, nodes, site_root, sites
+from reference_api.storage import filesystem
+
+LOG = logging.getLogger(__name__)
 
 
 # pylint: disable=too-few-public-methods
@@ -22,9 +39,64 @@ class JsonExtensionMiddleware(BaseHTTPMiddleware):
         return response
 
 
+def _load_availability_config(repo_root: Path) -> dict:
+    config_path = repo_root.parent / "etc" / "config.toml"
+    if not config_path.exists():
+        return {"poll_interval": 60.0, "site_timeout": 120.0, "error_backoff": 60.0, "sites": {}}
+    try:
+        with open(config_path, "rb") as f:
+            cfg = tomllib.load(f)
+    except (tomllib.TOMLDecodeError, OSError):
+        return {"poll_interval": 60.0, "site_timeout": 120.0, "error_backoff": 60.0, "sites": {}}
+    avail = cfg.get("availability", {})
+    return {
+        "poll_interval": float(avail.get("poll_interval_seconds", 60)),
+        "site_timeout": float(avail.get("site_timeout_seconds", 120)),
+        "error_backoff": float(avail.get("error_backoff_seconds", 60)),
+        "sites": {
+            site_id: site_cfg["cloud"]
+            for site_id, site_cfg in avail.get("sites", {}).items()
+        },
+    }
+
+
+@asynccontextmanager
+async def lifespan(web_app: FastAPI):
+    repo_root = get_repo_root()
+    avail_cfg = _load_availability_config(repo_root)
+    cache = AvailabilityCache()
+    web_app.state.availability_cache = cache
+
+    task = None
+    if avail_cfg["sites"]:
+        task = asyncio.create_task(
+            run_sync_loop(
+                cache,
+                avail_cfg["sites"],
+                avail_cfg["poll_interval"],
+                avail_cfg["site_timeout"],
+                avail_cfg["error_backoff"],
+            )
+        )
+    else:
+        LOG.warning("No availability sites configured; worker not started")
+
+    yield
+
+    if task:
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+
+def get_availability_cache(request: Request) -> AvailabilityCache:
+    return request.app.state.availability_cache
+
+
 app = FastAPI(
     title="Reference API",
-    description="Serves reference-repository JSON files as a REST API."
+    description="Serves reference-repository JSON files as a REST API.",
+    lifespan=lifespan,
 )
 app.add_middleware(JsonExtensionMiddleware)
 
@@ -433,3 +505,146 @@ def get_version(
     if not v:
         raise HTTPException(status_code=404, detail="Version not found")
     return v
+
+
+@app.get(
+    "/sites/{site_id}/clusters/{cluster_id}/nodes/{node_id}/availability",
+    response_model=NodeAvailabilityResponse,
+    summary="Get reservation intervals for a node",
+    tags=["Nodes", "Availability"],
+    responses={404: {"description": "Node not found or availability not yet synced"}},
+)
+async def get_node_availability(
+    site_id: str = FastApiPath(..., examples=["uc"]),
+    cluster_id: str = FastApiPath(..., examples=["chameleon"]),
+    node_id: str = FastApiPath(...),
+    ref_dir: Path = Depends(get_ref_dir),
+    repo_root: Path = Depends(get_repo_root),
+    cache: AvailabilityCache = Depends(get_availability_cache),
+):
+    if not nodes.get_node_details(ref_dir, site_id, cluster_id, node_id, repo_root):
+        raise HTTPException(status_code=404, detail="Node not found")
+    cached = await cache.get_node(site_id, node_id)
+    if cached is None:
+        raise HTTPException(status_code=404, detail="Availability not yet synced for this node")
+    last_synced, intervals = cached
+    if intervals is None:
+        raise HTTPException(status_code=404, detail="Node not registered in Blazar")
+    return NodeAvailabilityResponse(
+        node_id=node_id,
+        cluster_id=cluster_id,
+        site_id=site_id,
+        last_updated=last_synced,
+        reservations=[Reservation(start=iv.start, end=iv.end) for iv in intervals],
+    )
+
+
+@app.get(
+    "/sites/{site_id}/availability",
+    summary="Get availability sync status for a site",
+    tags=["Sites", "Availability"],
+    responses={404: {"description": "Site not yet synced"}},
+)
+async def get_site_availability(
+    site_id: str = FastApiPath(..., examples=["tacc"]),
+    cache: AvailabilityCache = Depends(get_availability_cache),
+):
+    result = await cache.get_site_last_synced(site_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Availability not yet synced for this site")
+    last_synced, node_count = result
+    return {"site_id": site_id, "last_synced": last_synced, "synced_node_count": node_count}
+
+
+@app.get(
+    "/nodes/search",
+    response_model=NodeSearchResponse,
+    summary="Search nodes by hardware properties and availability window",
+    tags=["Nodes", "Availability"],
+)
+async def search_nodes(  # pylint: disable=too-many-locals,too-many-branches
+    site_id: Optional[str] = Query(None, description="Filter by site, e.g. tacc or uc"),
+    node_type: Optional[str] = Query(None, description="Filter by node type, e.g. compute_skylake"),
+    arch: Optional[str] = Query(
+        None, description="Filter by CPU architecture, e.g. x86_64 or aarch64"
+    ),
+    gpu: Optional[bool] = Query(
+        None, description="Filter to nodes with (true) or without (false) a GPU"
+    ),
+    infiniband: Optional[bool] = Query(
+        None, description="Filter to nodes with (true) or without (false) InfiniBand"
+    ),
+    min_ram: Optional[int] = Query(
+        None, description="Minimum RAM in bytes, e.g. 137438953472 for 128 GiB"
+    ),
+    start: Optional[datetime] = Query(
+        None, description="Start of desired reservation window (ISO 8601)"
+    ),
+    end: Optional[datetime] = Query(
+        None, description="End of desired reservation window (ISO 8601)"
+    ),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(500, gt=0, le=500),
+    ref_dir: Path = Depends(get_ref_dir),
+    cache: AvailabilityCache = Depends(get_availability_cache),
+):
+    if (start is None) != (end is None):
+        raise HTTPException(status_code=400, detail="Provide both start and end, or neither")
+
+    now = datetime.now(timezone.utc)
+    results: list[SearchNodeItem] = []
+    for site_data in filesystem.list_sites(ref_dir):
+        current_site_id = site_data.get("uid")
+        if not current_site_id:
+            continue
+        if site_id and current_site_id != site_id:
+            continue
+        site_nodes = await cache.get_site_nodes(current_site_id)
+
+        for cluster_data in filesystem.list_clusters(ref_dir, current_site_id) or []:
+            cluster_id = cluster_data.get("uid")
+            if not cluster_id:
+                continue
+
+            for node_data in filesystem.list_nodes(ref_dir, current_site_id, cluster_id) or []:
+                if node_type and node_data.get("node_type") != node_type:
+                    continue
+                if arch and node_data.get("architecture", {}).get("platform_type") != arch:
+                    continue
+                if gpu is not None and node_data.get("gpu", {}).get("gpu", False) != gpu:
+                    continue
+                node_ib = bool(node_data.get("infiniband", False))
+                if infiniband is not None and node_ib != infiniband:
+                    continue
+                node_ram = node_data.get("main_memory", {}).get("ram_size", 0)
+                if min_ram is not None and node_ram < min_ram:
+                    continue
+
+                node_uuid = node_data.get("uid")
+                if not node_uuid:
+                    continue
+
+                if site_nodes is None:
+                    availability = "unknown"
+                else:
+                    intervals = site_nodes.get(node_uuid, [])
+                    if start and end:
+                        if any(iv.start < end and iv.end > start for iv in intervals):
+                            continue  # busy in requested window
+                        availability = "available"
+                    else:
+                        has_future = any(iv.end > now for iv in intervals)
+                        availability = "reserved" if has_future else "available"
+
+                results.append(SearchNodeItem.model_validate({
+                    **node_data,
+                    "site_id": current_site_id,
+                    "cluster_id": cluster_id,
+                    "availability": availability,
+                }))
+
+    return NodeSearchResponse(
+        total=len(results),
+        offset=offset,
+        items=results[offset:offset + limit],
+    )

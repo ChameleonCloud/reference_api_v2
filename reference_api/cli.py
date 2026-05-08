@@ -19,9 +19,18 @@ def main():
             cfg = {}
 
     ref_cfg = cfg.get("reference", {})
-    default_ref = ref_cfg.get(
-        "ref_dir", "reference-repository/data/chameleoncloud"
+    server_cfg = cfg.get("server", {})
+
+    default_ref = (
+        os.environ.get("REFERENCE_API_REF_DIR")
+        or ref_cfg.get("ref_dir", "reference-repository/data/chameleoncloud")
     )
+    default_host = (
+        os.environ.get("REFERENCE_API_HOST")
+        or server_cfg.get("host", "0.0.0.0")
+    )
+    _port_env = os.environ.get("REFERENCE_API_PORT")
+    default_port = int(_port_env) if _port_env else int(server_cfg.get("port", 8000))
 
     parser = argparse.ArgumentParser(prog="reference-api")
 
@@ -34,13 +43,13 @@ def main():
 
     parser.add_argument(
         "--host",
-        default=os.environ.get("REFERENCE_API_HOST", "0.0.0.0")
+        default=default_host,
     )
 
     parser.add_argument(
         "--port",
         type=int,
-        default=int(os.environ.get("REFERENCE_API_PORT", "8000"))
+        default=default_port,
     )
 
     parser.add_argument(
