@@ -9,6 +9,8 @@ dependencies = [
     "pydantic",
     "cachetools",
     "tomli; python_version < '3.11'",
+    "chameleon-blazarclient",
+    "openstacksdk",
 ]
 
 [project.optional-dependencies]

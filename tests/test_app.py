@@ -73,7 +73,7 @@ def test_nodes_and_node(client):
     r = client.get("/sites/uc/clusters/chameleon/nodes")
     assert r.status_code == 200
     j = r.json()
-    assert j.get("total") == 1
+    assert j.get("total") == 2
     node_id = j["items"][0]["uid"]
     r2 = client.get(f"/sites/uc/clusters/chameleon/nodes/{node_id}")
     assert r2.status_code == 200

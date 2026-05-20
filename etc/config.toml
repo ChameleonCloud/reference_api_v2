@@ -1,2 +1,14 @@
+[server]
+host = "0.0.0.0"
+port = 8000
+
 [reference]
 ref_dir = "reference-repository/data/chameleoncloud"
+
+[availability]
+poll_interval_seconds = 60
+site_timeout_seconds = 120
+error_backoff_seconds = 60
+
+[availability.sites.tacc]
+cloud = "tacc"

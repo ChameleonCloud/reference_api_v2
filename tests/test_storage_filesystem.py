@@ -41,7 +41,7 @@ def test_version_helpers(mock_ref_dir):
 
 def test_list_nodes(mock_ref_dir):
     nodes = filesystem.list_nodes(mock_ref_dir, "uc", "chameleon")
-    assert nodes and len(nodes) == 1
+    assert nodes and len(nodes) == 2
 
 
 def test_read_node(mock_ref_dir):
