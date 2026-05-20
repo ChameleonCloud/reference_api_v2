@@ -10,6 +10,7 @@ class _SiteData:
     last_synced: datetime
     nodes: dict[str, list[Interval]] = field(default_factory=dict)
     known_nodes: frozenset[str] = field(default_factory=frozenset)
+    unavailable_nodes: frozenset[str] = field(default_factory=frozenset)
 
 
 class AvailabilityCache:
@@ -24,6 +25,7 @@ class AvailabilityCache:
         site_id: str,
         nodes: dict[str, list[Interval]],
         known_nodes: frozenset[str],
+        unavailable_nodes: frozenset[str],
     ) -> None:
         """Replace all availability data for a site."""
         async with self._lock:
@@ -31,29 +33,34 @@ class AvailabilityCache:
                 last_synced=datetime.now(timezone.utc),
                 nodes=nodes,
                 known_nodes=known_nodes,
+                unavailable_nodes=unavailable_nodes,
             )
 
     async def get_node(
         self, site_id: str, node_uuid: str
-    ) -> tuple[datetime, list[Interval] | None] | None:
-        # None          = site never synced
-        # (dt, None)    = site synced, node not registered in Blazar
-        # (dt, [])      = site synced, node free
-        # (dt, [...])   = site synced, node has reservations
+    ) -> tuple[datetime, list[Interval] | None, bool] | None:
+        # None              = site never synced
+        # (dt, None, False) = site synced, node not registered in Blazar
+        # (dt, [], True)    = site synced, node in maintenance/disabled
+        # (dt, [], False)   = site synced, node free
+        # (dt, [...], False)= site synced, node has reservations
         async with self._lock:
             site = self._data.get(site_id)
             if site is None:
                 return None
             if node_uuid not in site.known_nodes:
-                return site.last_synced, None
-            return site.last_synced, list(site.nodes.get(node_uuid, []))
+                return site.last_synced, None, False
+            maintenance = node_uuid in site.unavailable_nodes
+            return site.last_synced, list(site.nodes.get(node_uuid, [])), maintenance
 
     async def get_site_nodes(
         self, site_id: str
-    ) -> dict[str, list[Interval]] | None:
+    ) -> tuple[dict[str, list[Interval]], frozenset[str]] | None:
         async with self._lock:
             site = self._data.get(site_id)
-            return dict(site.nodes) if site is not None else None
+            if site is None:
+                return None
+            return dict(site.nodes), frozenset(site.unavailable_nodes)
 
     async def get_site_last_synced(
         self, site_id: str

@@ -9,7 +9,7 @@ dependencies = [
     "pydantic",
     "cachetools",
     "tomli; python_version < '3.11'",
-    "python-blazarclient",
+    "chameleon-blazarclient",
     "openstacksdk",
 ]
 

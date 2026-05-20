@@ -37,7 +37,7 @@ def empty_cache():
 @pytest.fixture
 def seeded_cache():
     cache = AvailabilityCache()
-    asyncio.run(cache.update_site("uc", {NODE_UUID: [Interval(*FUTURE)]}, ALL_KNOWN))
+    asyncio.run(cache.update_site("uc", {NODE_UUID: [Interval(*FUTURE)]}, ALL_KNOWN, frozenset()))
     return cache
 
 
@@ -45,7 +45,7 @@ def seeded_cache():
 def synced_empty_cache():
     """Site synced but node has no reservations."""
     cache = AvailabilityCache()
-    asyncio.run(cache.update_site("uc", {}, ALL_KNOWN))
+    asyncio.run(cache.update_site("uc", {}, ALL_KNOWN, frozenset()))
     return cache
 
 
@@ -62,9 +62,19 @@ def test_node_availability_node_not_in_repo(mock_ref_dir, tmp_repo_dir, seeded_c
 def test_node_availability_node_not_in_blazar(mock_ref_dir, tmp_repo_dir):
     # Node exists in the repo but wasn't returned by Blazar — should be 404
     cache = AvailabilityCache()
-    asyncio.run(cache.update_site("uc", {}, frozenset()))  # site synced, no known nodes
+    asyncio.run(cache.update_site("uc", {}, frozenset(), frozenset()))
     client = _make_client(mock_ref_dir, tmp_repo_dir, cache)
     assert client.get(AVAILABILITY_URL).status_code == 404
+
+
+def test_node_availability_maintenance(mock_ref_dir, tmp_repo_dir):
+    cache = AvailabilityCache()
+    asyncio.run(cache.update_site("uc", {}, ALL_KNOWN, ALL_KNOWN))  # all nodes in maintenance
+    client = _make_client(mock_ref_dir, tmp_repo_dir, cache)
+    r = client.get(AVAILABILITY_URL)
+    assert r.status_code == 200
+    assert r.json()["maintenance"] is True
+    assert r.json()["reservations"] == []
 
 
 def test_node_availability_free_node_returns_empty(mock_ref_dir, tmp_repo_dir, synced_empty_cache):
@@ -152,6 +162,16 @@ def test_search_min_ram_filter(mock_ref_dir, tmp_repo_dir, empty_cache):
     assert client.get("/nodes/search?min_ram=1").json()["total"] == 2
     assert client.get("/nodes/search?min_ram=137438953472").json()["total"] == 1  # 128 GiB threshold
     assert client.get("/nodes/search?min_ram=999999999999999").json()["total"] == 0
+
+
+def test_search_maintenance_status(mock_ref_dir, tmp_repo_dir):
+    cache = AvailabilityCache()
+    asyncio.run(cache.update_site("uc", {}, ALL_KNOWN, frozenset({NODE_UUID})))
+    client = _make_client(mock_ref_dir, tmp_repo_dir, cache)
+    r = client.get("/nodes/search")
+    items = {item["uid"]: item for item in r.json()["items"]}
+    assert items[NODE_UUID]["availability"] == "maintenance"
+    assert items[NODE_UUID_2]["availability"] == "available"
 
 
 def test_search_reserved_status_no_window(mock_ref_dir, tmp_repo_dir, seeded_cache):

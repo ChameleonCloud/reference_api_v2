@@ -27,6 +27,8 @@ from reference_api.availability.worker import run_sync_loop
 from reference_api.services import clusters, nodes, site_root, sites
 from reference_api.storage import filesystem
 
+logging.basicConfig(level=logging.INFO)
+
 LOG = logging.getLogger(__name__)
 
 
@@ -527,7 +529,7 @@ async def get_node_availability(
     cached = await cache.get_node(site_id, node_id)
     if cached is None:
         raise HTTPException(status_code=404, detail="Availability not yet synced for this node")
-    last_synced, intervals = cached
+    last_synced, intervals, maintenance = cached
     if intervals is None:
         raise HTTPException(status_code=404, detail="Node not registered in Blazar")
     return NodeAvailabilityResponse(
@@ -535,6 +537,7 @@ async def get_node_availability(
         cluster_id=cluster_id,
         site_id=site_id,
         last_updated=last_synced,
+        maintenance=maintenance,
         reservations=[Reservation(start=iv.start, end=iv.end) for iv in intervals],
     )
 
@@ -599,7 +602,11 @@ async def search_nodes(  # pylint: disable=too-many-locals,too-many-branches
             continue
         if site_id and current_site_id != site_id:
             continue
-        site_nodes = await cache.get_site_nodes(current_site_id)
+        site_result = await cache.get_site_nodes(current_site_id)
+        site_nodes: dict | None = None
+        site_unavailable: frozenset = frozenset()
+        if site_result is not None:
+            site_nodes, site_unavailable = site_result
 
         for cluster_data in filesystem.list_clusters(ref_dir, current_site_id) or []:
             cluster_id = cluster_data.get("uid")
@@ -626,6 +633,8 @@ async def search_nodes(  # pylint: disable=too-many-locals,too-many-branches
 
                 if site_nodes is None:
                     availability = "unknown"
+                elif node_uuid in site_unavailable:
+                    availability = "maintenance"
                 else:
                     intervals = site_nodes.get(node_uuid, [])
                     if start and end:

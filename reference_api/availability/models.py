@@ -19,6 +19,7 @@ class NodeAvailabilityResponse(BaseModel):
     cluster_id: str
     site_id: str
     last_updated: datetime
+    maintenance: bool = False
     reservations: list[Reservation]
 
 

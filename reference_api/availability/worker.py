@@ -18,17 +18,27 @@ async def run_sync_loop(
     site_timeout: float = _DEFAULT_SITE_TIMEOUT,
     error_backoff: float = _DEFAULT_ERROR_BACKOFF,
 ) -> None:
-    """Poll Blazar at each configured site on a fixed interval."""
+    """Spawn an independent sync task per site and run them concurrently."""
+    await asyncio.gather(*(
+        _site_loop(cache, site_id, cloud_name, poll_interval, site_timeout, error_backoff)
+        for site_id, cloud_name in site_configs.items()
+    ))
+
+
+async def _site_loop(
+    cache: AvailabilityCache,
+    site_id: str,
+    cloud_name: str,
+    poll_interval: float,
+    site_timeout: float,
+    error_backoff: float,
+) -> None:
     while True:
         try:
-            for site_id, cloud_name in site_configs.items():
-                try:
-                    await _sync_site(cache, site_id, cloud_name, site_timeout)
-                except Exception:  # pylint: disable=broad-exception-caught
-                    LOG.exception("Availability sync failed for site %s", site_id)
+            await _sync_site(cache, site_id, cloud_name, site_timeout)
             await asyncio.sleep(poll_interval)
         except Exception:  # pylint: disable=broad-exception-caught
-            LOG.exception("Unexpected error in availability sync loop, backing off")
+            LOG.exception("Availability sync failed for site %s, backing off", site_id)
             await asyncio.sleep(error_backoff)
 
 
@@ -38,15 +48,16 @@ async def _sync_site(
     cloud_name: str,
     site_timeout: float,
 ) -> None:
+    LOG.info("Starting availability sync for site %s", site_id)
     loop = asyncio.get_running_loop()
 
     def _fetch():
         client = BlazarClient(cloud_name)
         return client.list_host_allocations()
 
-    nodes, known_uuids = await asyncio.wait_for(
+    nodes, known_uuids, unavailable_uuids = await asyncio.wait_for(
         loop.run_in_executor(None, _fetch),
         timeout=site_timeout,
     )
-    await cache.update_site(site_id, nodes, known_uuids)
+    await cache.update_site(site_id, nodes, known_uuids, unavailable_uuids)
     LOG.info("Synced availability for site %s: %d nodes", site_id, len(known_uuids))
