@@ -46,7 +46,8 @@ class BlazarClient:  # pylint: disable=too-few-public-methods
 
         LOG.debug("Fetching leases from Blazar")
         windows: dict[str, Interval] = {}
-        for lease in self._client.lease.list():
+        _, lease_body = self._client.lease.request_manager.get("/leases?all_tenants=1")
+        for lease in lease_body["leases"]:
             start = _parse_dt(lease.get("start_date"))
             end = _parse_dt(lease.get("end_date"))
             if start and end:
