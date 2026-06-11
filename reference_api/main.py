@@ -642,8 +642,8 @@ async def search_nodes(  # pylint: disable=too-many-locals,too-many-branches
                             continue  # busy in requested window
                         availability = "available"
                     else:
-                        has_future = any(iv.end > now for iv in intervals)
-                        availability = "reserved" if has_future else "available"
+                        is_active = any(iv.start <= now < iv.end for iv in intervals)
+                        availability = "reserved" if is_active else "available"
 
                 results.append(SearchNodeItem.model_validate({
                     **node_data,
