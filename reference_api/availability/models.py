@@ -29,6 +29,7 @@ class SearchNodeItem(BaseModel):
     site_id: str
     cluster_id: str
     availability: str  # "available" | "reserved" | "unknown"
+    availability_until: Optional[datetime] = None
     model_config = ConfigDict(extra="allow")
 
 

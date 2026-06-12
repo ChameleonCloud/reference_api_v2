@@ -631,6 +631,7 @@ async def search_nodes(  # pylint: disable=too-many-locals,too-many-branches
                 if not node_uuid:
                     continue
 
+                availability_until = None
                 if site_nodes is None:
                     availability = "unknown"
                 elif node_uuid in site_unavailable:
@@ -642,14 +643,22 @@ async def search_nodes(  # pylint: disable=too-many-locals,too-many-branches
                             continue  # busy in requested window
                         availability = "available"
                     else:
-                        is_active = any(iv.start <= now < iv.end for iv in intervals)
-                        availability = "reserved" if is_active else "available"
+                        active = [iv for iv in intervals if iv.start <= now < iv.end]
+                        if active:
+                            availability = "reserved"
+                            availability_until = min(iv.end for iv in active)
+                        else:
+                            availability = "available"
+                            upcoming = [iv.start for iv in intervals if iv.start > now]
+                            if upcoming:
+                                availability_until = min(upcoming)
 
                 results.append(SearchNodeItem.model_validate({
                     **node_data,
                     "site_id": current_site_id,
                     "cluster_id": cluster_id,
                     "availability": availability,
+                    "availability_until": availability_until,
                 }))
 
     return NodeSearchResponse(
