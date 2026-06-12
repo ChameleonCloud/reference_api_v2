@@ -565,7 +565,7 @@ async def get_site_availability(
     summary="Search nodes by hardware properties and availability window",
     tags=["Nodes", "Availability"],
 )
-async def search_nodes(  # pylint: disable=too-many-locals,too-many-branches
+async def search_nodes(  # pylint: disable=too-many-locals,too-many-branches,too-many-statements
     site_id: Optional[str] = Query(None, description="Filter by site, e.g. tacc or uc"),
     node_type: Optional[str] = Query(None, description="Filter by node type, e.g. compute_skylake"),
     arch: Optional[str] = Query(

@@ -22,7 +22,7 @@ class BlazarClient:  # pylint: disable=too-few-public-methods
             "1", service_type="reservation", session=cloud.get_session()
         )
 
-    def list_host_allocations(
+    def list_host_allocations(  # pylint: disable=too-many-locals
         self,
     ) -> tuple[dict[str, list[Interval]], frozenset[str], frozenset[str]]:
         """Return (reservations, known_uuids, unavailable_uuids).
