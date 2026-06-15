@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
 import openstack.config
@@ -21,15 +22,21 @@ class BlazarClient:  # pylint: disable=too-few-public-methods
             "1", service_type="reservation", session=cloud.get_session()
         )
 
-    def list_host_allocations(
+    def list_host_allocations(  # pylint: disable=too-many-locals
         self,
     ) -> tuple[dict[str, list[Interval]], frozenset[str], frozenset[str]]:
         """Return (reservations, known_uuids, unavailable_uuids).
 
         unavailable_uuids contains nodes that are disabled or non-reservable.
         """
-        LOG.debug("Fetching hosts from Blazar")
-        all_hosts = self._client.host.list()
+        LOG.debug("Fetching hosts and allocations from Blazar")
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            hosts_future = executor.submit(self._client.host.list)
+            allocations_future = executor.submit(self._client.allocation.list, "os-hosts")
+
+        all_hosts = hosts_future.result()
+        allocations = allocations_future.result()
+
         uuid_by_blazar_id = {
             h["id"]: h["hypervisor_hostname"]
             for h in all_hosts
@@ -44,26 +51,18 @@ class BlazarClient:  # pylint: disable=too-few-public-methods
         )
         LOG.debug("Found %d hosts (%d unavailable)", len(known_uuids), len(unavailable_uuids))
 
-        LOG.debug("Fetching leases from Blazar")
-        windows: dict[str, Interval] = {}
-        for lease in self._client.lease.list():
-            start = _parse_dt(lease.get("start_date"))
-            end = _parse_dt(lease.get("end_date"))
-            if start and end:
-                windows[lease["id"]] = Interval(start, end)
-        LOG.debug("Found %d active lease windows", len(windows))
-
-        LOG.debug("Fetching host allocations from Blazar")
         result: dict[str, list[Interval]] = {}
-        for alloc in self._client.allocation.list("os-hosts"):
+        for alloc in allocations:
             node_uuid = uuid_by_blazar_id.get(alloc["resource_id"])
             if not node_uuid:
                 continue
-            result[node_uuid] = [
-                windows[r["lease_id"]]
-                for r in alloc.get("reservations", [])
-                if r.get("lease_id") in windows
-            ]
+            intervals = []
+            for r in alloc.get("reservations", []):
+                start = _parse_dt(r.get("start_date"))
+                end = _parse_dt(r.get("end_date"))
+                if start and end:
+                    intervals.append(Interval(start, end))
+            result[node_uuid] = intervals
         return result, known_uuids, unavailable_uuids
 
 

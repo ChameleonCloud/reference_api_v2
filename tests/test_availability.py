@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
@@ -16,6 +16,9 @@ FUTURE = (
     datetime(2099, 1, 1, tzinfo=timezone.utc),
     datetime(2099, 1, 2, tzinfo=timezone.utc),
 )
+
+_NOW = datetime.now(timezone.utc)
+ACTIVE = (_NOW - timedelta(hours=1), _NOW + timedelta(hours=1))
 
 ALL_KNOWN = frozenset({NODE_UUID, NODE_UUID_2})
 
@@ -46,6 +49,14 @@ def synced_empty_cache():
     """Site synced but node has no reservations."""
     cache = AvailabilityCache()
     asyncio.run(cache.update_site("uc", {}, ALL_KNOWN, frozenset()))
+    return cache
+
+
+@pytest.fixture
+def active_cache():
+    """Node has a reservation that is currently active (started in past, ends in future)."""
+    cache = AvailabilityCache()
+    asyncio.run(cache.update_site("uc", {NODE_UUID: [Interval(*ACTIVE)]}, ALL_KNOWN, frozenset()))
     return cache
 
 
@@ -174,8 +185,18 @@ def test_search_maintenance_status(mock_ref_dir, tmp_repo_dir):
     assert items[NODE_UUID_2]["availability"] == "available"
 
 
-def test_search_reserved_status_no_window(mock_ref_dir, tmp_repo_dir, seeded_cache):
+def test_search_future_reservation_shows_available(mock_ref_dir, tmp_repo_dir, seeded_cache):
+    # A node with only future reservations is currently available.
     client = _make_client(mock_ref_dir, tmp_repo_dir, seeded_cache)
+    r = client.get("/nodes/search")
+    items = {item["uid"]: item for item in r.json()["items"]}
+    assert items[NODE_UUID]["availability"] == "available"
+    assert items[NODE_UUID_2]["availability"] == "available"
+
+
+def test_search_active_reservation_shows_reserved(mock_ref_dir, tmp_repo_dir, active_cache):
+    # A node with a currently-active reservation shows as reserved.
+    client = _make_client(mock_ref_dir, tmp_repo_dir, active_cache)
     r = client.get("/nodes/search")
     items = {item["uid"]: item for item in r.json()["items"]}
     assert items[NODE_UUID]["availability"] == "reserved"

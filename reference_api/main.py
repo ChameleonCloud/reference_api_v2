@@ -565,7 +565,7 @@ async def get_site_availability(
     summary="Search nodes by hardware properties and availability window",
     tags=["Nodes", "Availability"],
 )
-async def search_nodes(  # pylint: disable=too-many-locals,too-many-branches
+async def search_nodes(  # pylint: disable=too-many-locals,too-many-branches,too-many-statements
     site_id: Optional[str] = Query(None, description="Filter by site, e.g. tacc or uc"),
     node_type: Optional[str] = Query(None, description="Filter by node type, e.g. compute_skylake"),
     arch: Optional[str] = Query(
@@ -631,6 +631,7 @@ async def search_nodes(  # pylint: disable=too-many-locals,too-many-branches
                 if not node_uuid:
                     continue
 
+                availability_until = None
                 if site_nodes is None:
                     availability = "unknown"
                 elif node_uuid in site_unavailable:
@@ -642,14 +643,22 @@ async def search_nodes(  # pylint: disable=too-many-locals,too-many-branches
                             continue  # busy in requested window
                         availability = "available"
                     else:
-                        has_future = any(iv.end > now for iv in intervals)
-                        availability = "reserved" if has_future else "available"
+                        active = [iv for iv in intervals if iv.start <= now < iv.end]
+                        if active:
+                            availability = "reserved"
+                            availability_until = min(iv.end for iv in active)
+                        else:
+                            availability = "available"
+                            upcoming = [iv.start for iv in intervals if iv.start > now]
+                            if upcoming:
+                                availability_until = min(upcoming)
 
                 results.append(SearchNodeItem.model_validate({
                     **node_data,
                     "site_id": current_site_id,
                     "cluster_id": cluster_id,
                     "availability": availability,
+                    "availability_until": availability_until,
                 }))
 
     return NodeSearchResponse(
