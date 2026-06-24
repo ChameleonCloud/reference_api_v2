@@ -35,7 +35,7 @@ LOG = logging.getLogger(__name__)
 # pylint: disable=too-few-public-methods
 class JsonExtensionMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        if request.url.path.endswith(".json"):
+        if request.url.path.endswith(".json") and request.url.path != "/openapi.json":
             request.scope["path"] = request.scope["path"][:-5]
         response = await call_next(request)
         return response
