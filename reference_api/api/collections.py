@@ -28,6 +28,14 @@ class NodeCollection(BaseModel):
     links: List[Any] = Field(default_factory=list)
 
 
+class FlavorCollection(BaseModel):
+    total: int
+    offset: int
+    items: List[Any]
+    version: Optional[str] = None
+    links: List[Any] = Field(default_factory=list)
+
+
 class VersionCollection(BaseModel):
     total: int
     offset: int
