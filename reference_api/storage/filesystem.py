@@ -117,6 +117,22 @@ def get_node_path(site_id: str, cluster_id: str, node_id: str) -> str:
     return f"sites/{site_id}/clusters/{cluster_id}/nodes/{node_id}.json"
 
 
+def list_flavors(ref_dir: Path, site_id: str) -> Optional[List[Dict]]:
+    p = ref_dir / "sites" / site_id / "flavors"
+    if not p.exists():
+        return []
+    items = []
+    for flavor_file in p.glob("*.json"):
+        data = _read_json(flavor_file)
+        if data:
+            items.append(data)
+    return items
+
+
+def read_flavor(ref_dir: Path, site_id: str, flavor_id: str) -> Optional[Dict]:
+    return _read_json(ref_dir / f"sites/{site_id}/flavors/{flavor_id}.json")
+
+
 def get_version(repo_path: Path) -> Optional[str]:
     return git_versioning.get_version(repo_path)
 

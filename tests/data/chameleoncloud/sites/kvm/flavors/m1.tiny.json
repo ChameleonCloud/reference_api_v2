@@ -1,0 +1,13 @@
+{
+  "type": "vm_flavor",
+  "uid": "m1.tiny",
+  "name": "m1.tiny",
+  "vcpus": 1,
+  "ram_size": 1073741824,
+  "humanized_ram_size": "1 GiB",
+  "disk_size": 10737418240,
+  "humanized_disk_size": "10 GiB",
+  "gpu": {"gpu": false},
+  "openstack_properties": {"trait:CUSTOM_GPU": "forbidden"},
+  "su_cost_per_hour": 0.13
+}

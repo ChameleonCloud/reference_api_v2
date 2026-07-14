@@ -52,3 +52,13 @@ def test_read_node(mock_ref_dir):
         "03129bbe-330c-4591-bc17-96d7e15d3e74"
     )
     assert node and node.get("node_name") == "nc35"
+
+
+def test_list_flavors(mock_ref_dir):
+    flavors = filesystem.list_flavors(mock_ref_dir, "kvm")
+    assert flavors and len(flavors) == 2
+
+
+def test_read_flavor(mock_ref_dir):
+    flavor = filesystem.read_flavor(mock_ref_dir, "kvm", "m1.large")
+    assert flavor and flavor.get("name") == "m1.large"

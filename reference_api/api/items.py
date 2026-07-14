@@ -51,3 +51,18 @@ class NodeItem(BaseModel):
     version: Optional[str] = None
     links: List[Any] = Field(default_factory=list)
     model_config = ConfigDict(extra="allow")
+
+
+class FlavorItem(BaseItem):
+    name: Optional[str] = None
+    vcpus: Optional[int] = None
+    ram_size: Optional[int] = None
+    humanized_ram_size: Optional[str] = None
+    disk_size: Optional[int] = None
+    humanized_disk_size: Optional[str] = None
+    gpu: Optional[Any] = None
+    openstack_properties: Optional[Any] = None
+    su_cost_per_hour: Optional[float] = None
+    version: Optional[str] = None
+    links: List[Any] = Field(default_factory=list)
+    model_config = ConfigDict(extra="allow")

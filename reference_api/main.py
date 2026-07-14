@@ -24,7 +24,7 @@ from reference_api.availability.models import (
     SearchNodeItem,
 )
 from reference_api.availability.worker import run_sync_loop
-from reference_api.services import clusters, nodes, site_root, sites
+from reference_api.services import clusters, flavors, nodes, site_root, sites
 from reference_api.storage import filesystem
 
 logging.basicConfig(level=logging.INFO)
@@ -364,6 +364,124 @@ def get_cluster_version(
 ):
     v = clusters.get_version_info_for_cluster(
         ref_dir, repo_root, site_id, cluster_id, version_id
+    )
+    if not v:
+        raise HTTPException(status_code=404, detail="Version not found")
+    return v
+
+
+@app.get(
+    "/sites/{site_id}/flavors",
+    response_model=collections.FlavorCollection,
+    summary="List flavors for a site",
+    responses={404: {"description": "Site not found"}},
+    tags=["Flavors"],
+)
+def list_flavors(
+    site_id: str = FastApiPath(
+        ..., description="The unique identifier for the site.", examples=["kvm"]
+    ),
+    offset: int = Query(0, ge=0, description="Offset for pagination"),
+    limit: int = Query(500, gt=0, le=500, description="Limit for pagination"),
+    ref_dir: Path = Depends(get_ref_dir),
+    repo_root: Path = Depends(get_repo_root)
+):
+    collection = flavors.get_flavors_collection(
+        ref_dir, site_id, repo_root, offset, limit
+    )
+    if collection is None:
+        raise HTTPException(status_code=404, detail="Site not found")
+    return collection
+
+
+@app.get(
+    "/sites/{site_id}/flavors/versions",
+    response_model=collections.VersionCollection,
+    summary="List versions for all flavors in a site",
+    tags=["Flavors", "Versioning"],
+)
+def list_all_flavor_versions_for_site(
+    site_id: str = FastApiPath(
+        ..., description="The unique identifier for the site.", examples=["kvm"]
+    ),
+    offset: int = Query(0, ge=0, description="Offset for pagination"),
+    limit: int = Query(500, gt=0, le=500, description="Limit for pagination"),
+    ref_dir: Path = Depends(get_ref_dir),
+    repo_root: Path = Depends(get_repo_root),
+):
+    return flavors.get_versions_for_all_flavors_in_site(
+        ref_dir, repo_root, site_id, offset, limit
+    )
+
+
+@app.get(
+    "/sites/{site_id}/flavors/{flavor_id}",
+    response_model=items.FlavorItem,
+    summary="Get a single flavor by its ID",
+    responses={404: {"description": "Flavor not found"}},
+    tags=["Flavors"],
+)
+def get_flavor(
+    site_id: str = FastApiPath(
+        ..., description="The unique identifier for the site.", examples=["kvm"]
+    ),
+    flavor_id: str = FastApiPath(
+        ..., description="The unique identifier for the flavor.", examples=["m1.large"]
+    ),
+    ref_dir: Path = Depends(get_ref_dir),
+    repo_root: Path = Depends(get_repo_root)
+):
+    flavor = flavors.get_flavor_details(ref_dir, site_id, flavor_id, repo_root)
+    if not flavor:
+        raise HTTPException(status_code=404, detail="Flavor not found")
+    return flavor
+
+
+@app.get(
+    "/sites/{site_id}/flavors/{flavor_id}/versions",
+    response_model=collections.VersionCollection,
+    summary="List versions for a flavor",
+    tags=["Flavors", "Versioning"],
+)
+def list_flavor_versions(
+    site_id: str = FastApiPath(
+        ..., description="The unique identifier for the site.", examples=["kvm"]
+    ),
+    flavor_id: str = FastApiPath(
+        ..., description="The unique identifier for the flavor.", examples=["m1.large"]
+    ),
+    offset: int = Query(0, ge=0, description="Offset for pagination"),
+    limit: int = Query(500, gt=0, le=500, description="Limit for pagination"),
+    ref_dir: Path = Depends(get_ref_dir),
+    repo_root: Path = Depends(get_repo_root)
+):
+    return flavors.get_versions_for_flavor(
+        ref_dir, repo_root, site_id, flavor_id, offset, limit
+    )
+
+
+@app.get(
+    "/sites/{site_id}/flavors/{flavor_id}/versions/{version_id}",
+    response_model=dict,
+    summary="Get version details for a flavor",
+    responses={404: {"description": "Version not found"}},
+    tags=["Flavors", "Versioning"],
+)
+def get_flavor_version(
+    site_id: str = FastApiPath(
+        ..., description="The unique identifier for the site.", examples=["kvm"]
+    ),
+    flavor_id: str = FastApiPath(
+        ..., description="The unique identifier for the flavor.", examples=["m1.large"]
+    ),
+    version_id: str = FastApiPath(
+        ..., description="The unique identifier for the version (commit SHA)."
+    ),
+    ref_dir: Path = Depends(get_ref_dir),
+    repo_root: Path = Depends(get_repo_root)
+):
+    v = flavors.get_version_info_for_flavor(
+        ref_dir, repo_root, site_id, flavor_id, version_id
     )
     if not v:
         raise HTTPException(status_code=404, detail="Version not found")

@@ -38,6 +38,11 @@ def get_item_path(
     raise ValueError(f"Unknown item_type: {item_type}")
 
 
+def get_flavor_path(ref_dir: Path, site_id: str, flavor_id: str) -> Path:
+    """Helper to construct the path to a specific flavor file."""
+    return ref_dir / "sites" / site_id / "flavors" / f"{flavor_id}.json"
+
+
 def get_versions_for_item(
     repo_root: Path,
     item_path: Path,
@@ -97,7 +102,7 @@ def make_item_links(
     item_type: str,
     site_id: str,
     cluster_id: Optional[str] = None,
-    node_id: Optional[str] = None,
+    item_id: Optional[str] = None,
     version: Optional[str] = None,
 ) -> List[Dict[str, str]]:
     """Helper to generate links for an item."""
@@ -109,6 +114,16 @@ def make_item_links(
                 {"rel": "self", "href": base_href},
                 {"rel": "parent", "href": "/"},
                 {"rel": "clusters", "href": f"{base_href}/clusters"},
+                {"rel": "flavors", "href": f"{base_href}/flavors"},
+                {"rel": "versions", "href": f"{base_href}/versions"},
+            ]
+        )
+    elif item_type == "flavor":
+        base_href = f"/sites/{site_id}/flavors/{item_id}"
+        links.extend(
+            [
+                {"rel": "self", "href": base_href},
+                {"rel": "parent", "href": f"/sites/{site_id}"},
                 {"rel": "versions", "href": f"{base_href}/versions"},
             ]
         )
@@ -123,7 +138,7 @@ def make_item_links(
             ]
         )
     elif item_type == "node":
-        base_href = f"/sites/{site_id}/clusters/{cluster_id}/nodes/{node_id}"
+        base_href = f"/sites/{site_id}/clusters/{cluster_id}/nodes/{item_id}"
         links.extend(
             [
                 {"rel": "self", "href": base_href},
@@ -158,6 +173,11 @@ def make_collection_links(
         return [
             {"rel": "self", "href": f"/sites/{site_id}/clusters/{cluster_id}/nodes"},
             {"rel": "parent", "href": f"/sites/{site_id}/clusters/{cluster_id}"},
+        ]
+    if item_type == "flavors":
+        return [
+            {"rel": "self", "href": f"/sites/{site_id}/flavors"},
+            {"rel": "parent", "href": f"/sites/{site_id}"},
         ]
     return []
 

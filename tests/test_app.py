@@ -79,6 +79,18 @@ def test_nodes_and_node(client):
     assert r2.status_code == 200
 
 
+def test_flavors_and_flavor(client):
+    r = client.get("/sites/kvm/flavors")
+    assert r.status_code == 200
+    j = r.json()
+    assert j.get("total") == 2
+    flavor_id = j["items"][0]["uid"]
+    r2 = client.get(f"/sites/kvm/flavors/{flavor_id}")
+    assert r2.status_code == 200
+    r_fail = client.get("/sites/kvm/flavors/nonexistent")
+    assert r_fail.status_code == 404
+
+
 def test_all_site_versions(client):
     r = client.get("/sites/versions")
     assert r.status_code == 200
