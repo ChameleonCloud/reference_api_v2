@@ -37,3 +37,16 @@ class NodeSearchResponse(BaseModel):
     total: int
     offset: int
     items: list[SearchNodeItem]
+
+
+class FlavorAvailabilitySegment(BaseModel):
+    start: datetime
+    end: datetime
+    available: int
+    total: int
+
+
+class FlavorAvailabilityResponse(BaseModel):
+    flavor_id: str
+    site_id: str
+    availability: list[FlavorAvailabilitySegment]
