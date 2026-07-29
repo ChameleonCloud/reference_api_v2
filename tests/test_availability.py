@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime, timedelta, timezone
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -237,3 +238,105 @@ def test_parse_dt_no_microseconds():
 
 def test_parse_dt_bad_format():
     assert _parse_dt("not-a-date") is None
+
+
+FLAVOR_UUID = "26e744f1-920f-4c1a-865e-a3835d14ee72"
+FLAVOR_AVAIL_URL = f"/sites/kvm/flavors/{FLAVOR_UUID}/availability"
+
+_FAKE_BLAZAR_ENTRIES = [
+    {
+        "flavor_id": FLAVOR_UUID,
+        "resource_spec": {"vcpus": 6, "memory_mb": 36000, "disk_gb": 40},
+        "availability": [
+            {
+                "start": datetime(2026, 7, 27, 15, 19),
+                "end": datetime(2026, 7, 29, 8, 36),
+                "available": 26,
+                "total": 28,
+            },
+        ],
+    }
+]
+
+
+@pytest.fixture
+def clear_flavor_cache():
+    from reference_api.main import _flavor_avail_cache
+    _flavor_avail_cache.clear()
+    yield
+    _flavor_avail_cache.clear()
+
+
+def _make_flavor_client(mock_ref_dir, tmp_repo_dir):
+    from reference_api.main import app, get_ref_dir, get_repo_root
+    app.dependency_overrides[get_repo_root] = lambda: tmp_repo_dir / "reference-repository"
+    app.dependency_overrides[get_ref_dir] = lambda: mock_ref_dir
+    return TestClient(app)
+
+
+def test_flavor_availability_no_blazar_site(mock_ref_dir, tmp_repo_dir, clear_flavor_cache):
+    client = _make_flavor_client(mock_ref_dir, tmp_repo_dir)
+    with patch("reference_api.main.get_site_clouds", return_value={}):
+        assert client.get(FLAVOR_AVAIL_URL).status_code == 404
+
+
+def test_flavor_availability_success(mock_ref_dir, tmp_repo_dir, clear_flavor_cache):
+    client = _make_flavor_client(mock_ref_dir, tmp_repo_dir)
+    with patch("reference_api.main.get_site_clouds", return_value={"kvm": "test_cloud"}), \
+         patch("reference_api.main._fetch_flavor_availability", return_value=_FAKE_BLAZAR_ENTRIES):
+        r = client.get(FLAVOR_AVAIL_URL)
+    assert r.status_code == 200
+    j = r.json()
+    assert j["flavor_id"] == FLAVOR_UUID
+    assert j["site_id"] == "kvm"
+    assert len(j["availability"]) == 1
+    seg = j["availability"][0]
+    assert seg["available"] == 26
+    assert seg["total"] == 28
+
+
+def test_flavor_availability_cache_hit(mock_ref_dir, tmp_repo_dir, clear_flavor_cache):
+    client = _make_flavor_client(mock_ref_dir, tmp_repo_dir)
+    with patch("reference_api.main.get_site_clouds", return_value={"kvm": "test_cloud"}), \
+         patch("reference_api.main._fetch_flavor_availability", return_value=_FAKE_BLAZAR_ENTRIES) as mock_fetch:
+        client.get(FLAVOR_AVAIL_URL)
+        client.get(FLAVOR_AVAIL_URL)
+    assert mock_fetch.call_count == 1
+
+
+def test_flavor_availability_old_blazar_returns_503(mock_ref_dir, tmp_repo_dir, clear_flavor_cache):
+    client = _make_flavor_client(mock_ref_dir, tmp_repo_dir)
+    with patch("reference_api.main.get_site_clouds", return_value={"kvm": "test_cloud"}), \
+         patch("reference_api.main._fetch_flavor_availability", side_effect=RuntimeError("blazarclient does not have flavor_instance support")):
+        r = client.get(FLAVOR_AVAIL_URL)
+    assert r.status_code == 503
+    assert "not yet available" in r.json()["detail"]
+
+
+def test_flavor_availability_unknown_flavor_returns_404(mock_ref_dir, tmp_repo_dir, clear_flavor_cache):
+    client = _make_flavor_client(mock_ref_dir, tmp_repo_dir)
+    with patch("reference_api.main.get_site_clouds", return_value={"kvm": "test_cloud"}), \
+         patch("reference_api.main._fetch_flavor_availability", side_effect=LookupError("Flavor not found: 'm1.fake'")):
+        r = client.get(FLAVOR_AVAIL_URL)
+    assert r.status_code == 404
+
+
+def test_flavor_availability_blazar_error_returns_502(mock_ref_dir, tmp_repo_dir, clear_flavor_cache):
+    client = _make_flavor_client(mock_ref_dir, tmp_repo_dir)
+    from blazarclient.exception import BlazarClientException
+    with patch("reference_api.main.get_site_clouds", return_value={"kvm": "test_cloud"}), \
+         patch("reference_api.main._fetch_flavor_availability", side_effect=BlazarClientException("ERROR: Internal Server Error")):
+        r = client.get(FLAVOR_AVAIL_URL)
+    assert r.status_code == 502
+
+
+def test_blazar_flavor_instance_guard():
+    from reference_api.availability.blazar_client import BlazarClient
+    client = BlazarClient.__new__(BlazarClient)
+    client._client = MagicMock(spec=[])  # no attributes — simulates old blazarclient
+    with pytest.raises(RuntimeError, match="flavor_instance"):
+        client.get_flavor_availability(
+            FLAVOR_UUID,
+            datetime.now(timezone.utc),
+            datetime.now(timezone.utc) + timedelta(days=30),
+        )

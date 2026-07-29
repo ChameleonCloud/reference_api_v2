@@ -1,14 +1,16 @@
 import asyncio
 import contextlib
+import json
 import logging
 import tomllib
 
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
+from cachetools import TTLCache
 from fastapi import Depends, FastAPI, HTTPException, Path as FastApiPath, Query
 from fastapi.responses import JSONResponse
 from git import InvalidGitRepositoryError, Repo
@@ -16,8 +18,11 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
 from reference_api.api import collections, items
+from reference_api.availability.blazar_client import BlazarClient
 from reference_api.availability.cache import AvailabilityCache
 from reference_api.availability.models import (
+    FlavorAvailabilityResponse,
+    FlavorAvailabilitySegment,
     NodeAvailabilityResponse,
     NodeSearchResponse,
     Reservation,
@@ -27,7 +32,7 @@ from reference_api.availability.worker import run_sync_loop
 from reference_api.services import clusters, flavors, nodes, site_root, sites
 from reference_api.storage import filesystem
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 
 LOG = logging.getLogger(__name__)
 
@@ -69,6 +74,10 @@ async def lifespan(web_app: FastAPI):
     cache = AvailabilityCache()
     web_app.state.availability_cache = cache
 
+    loop = asyncio.get_running_loop()
+    ref_dir = get_ref_dir(repo_root)
+    warmup = loop.run_in_executor(None, _warmup_flavor_clients, ref_dir)
+
     task = None
     if avail_cfg["sites"]:
         task = asyncio.create_task(
@@ -85,6 +94,7 @@ async def lifespan(web_app: FastAPI):
 
     yield
 
+    warmup.cancel()
     if task:
         task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
@@ -95,12 +105,60 @@ def get_availability_cache(request: Request) -> AvailabilityCache:
     return request.app.state.availability_cache
 
 
+@lru_cache(maxsize=1)
+def get_site_clouds() -> dict:
+    repo_root = get_repo_root()
+    config_path = repo_root.parent / "etc" / "config.toml"
+    if not config_path.exists():
+        return {}
+    try:
+        with open(config_path, "rb") as f:
+            cfg = tomllib.load(f)
+    except (tomllib.TOMLDecodeError, OSError):
+        return {}
+    return {
+        site_id: site_cfg["cloud"]
+        for site_id, site_cfg in cfg.get("flavor_availability", {}).get("sites", {}).items()
+    }
+
+
 app = FastAPI(
     title="Reference API",
     description="Serves reference-repository JSON files as a REST API.",
     lifespan=lifespan,
 )
 app.add_middleware(JsonExtensionMiddleware)
+
+_flavor_avail_cache: TTLCache = TTLCache(maxsize=256, ttl=120)
+_flavor_avail_lock = asyncio.Lock()
+_site_clients: dict[str, BlazarClient] = {}
+
+
+def _warmup_flavor_clients(ref_dir: Path) -> None:
+    for site_id, cloud_name in get_site_clouds().items():
+        try:
+            LOG.info("Flavor warmup: connecting to %s", cloud_name)
+            client = BlazarClient(cloud_name)
+            _site_clients[cloud_name] = client
+            flavors_dir = ref_dir / "sites" / site_id / "flavors"
+            if not flavors_dir.is_dir():
+                continue
+            for flavor_file in flavors_dir.glob("*.json"):
+                try:
+                    uid = json.loads(flavor_file.read_text()).get("uid")
+                    if uid:
+                        client.warmup_flavor(uid)
+                except Exception as exc:  # pylint: disable=broad-exception-caught
+                    LOG.warning("Flavor warmup: skipping %s: %s", flavor_file.name, exc)
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            LOG.warning("Flavor warmup: failed for %s: %s", cloud_name, exc)
+
+
+def _fetch_flavor_availability(
+    cloud_name: str, flavor_id: str, start_date: datetime, end_date: datetime
+) -> list[dict]:
+    client = _site_clients.get(cloud_name) or BlazarClient(cloud_name)
+    return client.get_flavor_availability(flavor_id, start_date, end_date)
 
 
 @lru_cache(maxsize=1)
@@ -486,6 +544,89 @@ def get_flavor_version(
     if not v:
         raise HTTPException(status_code=404, detail="Version not found")
     return v
+
+
+@app.get(
+    "/sites/{site_id}/flavors/{flavor_id}/availability",
+    response_model=FlavorAvailabilityResponse,
+    summary="Get availability timeline for a flavor",
+    tags=["Flavors", "Availability"],
+    responses={
+        404: {"description": "Flavor availability is not configured for this site"},
+        503: {"description": "Flavor availability is not yet available for this site"},
+    },
+)
+async def get_flavor_availability(  # pylint: disable=too-many-locals
+    site_id: str = FastApiPath(
+        ..., description="The unique identifier for the site.", examples=["uc"]
+    ),
+    flavor_id: str = FastApiPath(
+        ..., description="The Nova id of the flavor."
+    ),
+    start_date: Optional[datetime] = Query(
+        None, description="Start of the availability window (ISO 8601, defaults to now)"
+    ),
+    end_date: Optional[datetime] = Query(
+        None, description="End of the availability window (ISO 8601, defaults to now + 30 days)"
+    ),
+):
+    site_clouds = get_site_clouds()
+    if site_id not in site_clouds:
+        raise HTTPException(
+            status_code=404, detail="Flavor availability is not configured for this site"
+        )
+
+    now = datetime.now(timezone.utc)
+    if start_date is None:
+        start_date = now
+    if end_date is None:
+        end_date = now + timedelta(days=30)
+
+    start_rounded = start_date.replace(second=0, microsecond=0)
+    end_rounded = end_date.replace(second=0, microsecond=0)
+    cache_key = (site_id, flavor_id, start_rounded, end_rounded)
+
+    async with _flavor_avail_lock:
+        cached = _flavor_avail_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        cloud_name = site_clouds[site_id]
+        loop = asyncio.get_running_loop()
+        try:
+            raw = await loop.run_in_executor(
+                None, _fetch_flavor_availability, cloud_name, flavor_id, start_date, end_date
+            )
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail="Flavor not found") from exc
+        except RuntimeError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Flavor availability is not yet available for this site",
+            ) from exc
+        except Exception as exc:
+            LOG.error("Blazar error for %s/%s: %s", site_id, flavor_id, exc)
+            raise HTTPException(
+                status_code=502, detail="Error fetching flavor availability"
+            ) from exc
+
+        segs = raw[0].get("availability", []) if raw else []
+        segments = [
+            FlavorAvailabilitySegment(
+                start=seg["start"],
+                end=seg["end"],
+                available=seg["available"],
+                total=seg["total"],
+            )
+            for seg in segs
+        ]
+        result = FlavorAvailabilityResponse(
+            flavor_id=flavor_id,
+            site_id=site_id,
+            availability=segments,
+        )
+        _flavor_avail_cache[cache_key] = result
+        return result
 
 
 @app.get(
