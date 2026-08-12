@@ -33,9 +33,12 @@ async def _site_loop(
     site_timeout: float,
     error_backoff: float,
 ) -> None:
+    client: BlazarClient | None = None
     while True:
         try:
-            await _sync_site(cache, site_id, cloud_name, site_timeout)
+            if client is None:
+                client = BlazarClient(cloud_name)
+            await _sync_site(cache, site_id, client, site_timeout)
             await asyncio.sleep(poll_interval)
         except Exception:  # pylint: disable=broad-exception-caught
             LOG.exception("Availability sync failed for site %s, backing off", site_id)
@@ -45,14 +48,13 @@ async def _site_loop(
 async def _sync_site(
     cache: AvailabilityCache,
     site_id: str,
-    cloud_name: str,
+    client: BlazarClient,
     site_timeout: float,
 ) -> None:
     LOG.info("Starting availability sync for site %s", site_id)
     loop = asyncio.get_running_loop()
 
     def _fetch():
-        client = BlazarClient(cloud_name)
         return client.list_host_allocations()
 
     nodes, known_uuids, unavailable_uuids = await asyncio.wait_for(

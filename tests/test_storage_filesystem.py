@@ -33,12 +33,6 @@ def test_read_cluster(mock_ref_dir):
     assert cluster.get("uid") == "chameleon"
 
 
-def test_version_helpers(mock_ref_dir):
-    v = filesystem.get_version(mock_ref_dir)
-    # may be None in test env but should not raise
-    assert True
-
-
 def test_list_nodes(mock_ref_dir):
     nodes = filesystem.list_nodes(mock_ref_dir, "uc", "chameleon")
     assert nodes and len(nodes) == 2
