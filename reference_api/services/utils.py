@@ -209,4 +209,4 @@ def build_paginated_response(
 
 def get_version(repo_root: Path) -> Optional[str]:
     """Gets the repository version for a given repo_root."""
-    return filesystem.get_version(repo_root)
+    return filesystem.get_release_and_timestamp(repo_root).get("version")

@@ -157,8 +157,9 @@ def _warmup_flavor_clients(ref_dir: Path) -> None:
 def _fetch_flavor_availability(
     cloud_name: str, flavor_id: str, start_date: datetime, end_date: datetime
 ) -> list[dict]:
-    client = _site_clients.get(cloud_name) or BlazarClient(cloud_name)
-    return client.get_flavor_availability(flavor_id, start_date, end_date)
+    if cloud_name not in _site_clients:
+        _site_clients[cloud_name] = BlazarClient(cloud_name)
+    return _site_clients[cloud_name].get_flavor_availability(flavor_id, start_date, end_date)
 
 
 @lru_cache(maxsize=1)
