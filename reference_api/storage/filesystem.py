@@ -133,10 +133,6 @@ def read_flavor(ref_dir: Path, site_id: str, flavor_id: str) -> Optional[Dict]:
     return _read_json(ref_dir / f"sites/{site_id}/flavors/{flavor_id}.json")
 
 
-def get_version(repo_path: Path) -> Optional[str]:
-    return git_versioning.get_version(repo_path)
-
-
 def list_versions(
     repo_path: Path, dir_path: Optional[Path] = None
 ) -> List[Dict]:

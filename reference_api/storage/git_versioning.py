@@ -10,12 +10,7 @@ from git.exc import BadName
 
 
 git_cache: LRUCache = LRUCache(maxsize=1024)
-
-
-def get_version(repo_path: Path) -> Optional[str]:
-    """Return the git HEAD sha for the provided repo_path"""
-    repo = Repo(repo_path, search_parent_directories=True)
-    return repo.head.commit.hexsha
+_release_cache: LRUCache = LRUCache(maxsize=8)
 
 
 def _get_relative_dir_path(repo_root: Path, dir_path: Path) -> Optional[str]:
@@ -132,7 +127,7 @@ def get_version_info(
         return None
 
 
-@cached(git_cache)
+@cached(_release_cache)
 def get_release_and_timestamp(repo_path: Path) -> Dict[str, Optional[str]]:
     """Get the current release (HEAD sha) and timestamp for the repo."""
     result: Dict[str, Optional[str]] = {"version": None, "timestamp": None}
