@@ -12,6 +12,7 @@ from typing import Optional
 
 from cachetools import TTLCache
 from fastapi import Depends, FastAPI, HTTPException, Path as FastApiPath, Query
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from git import InvalidGitRepositoryError, Repo
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -128,6 +129,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.add_middleware(JsonExtensionMiddleware)
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["GET"])
 
 _flavor_avail_cache: TTLCache = TTLCache(maxsize=256, ttl=120)
 _flavor_avail_lock = asyncio.Lock()
